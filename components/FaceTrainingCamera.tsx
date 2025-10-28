@@ -293,7 +293,7 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
                         setError(null);
                         setCurrentProgress(0);
                         // Start training again from CURRENT step (not reset)
-                        startTraining();
+                        startCurrentStep();
                       }}
                       className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl shadow-lg transition-all"
                     >

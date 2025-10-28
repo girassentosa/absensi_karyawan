@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
-export default function UserLoginPage() {
+function UserLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
@@ -251,6 +251,18 @@ export default function UserLoginPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function UserLoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-500">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    }>
+      <UserLoginForm />
+    </Suspense>
   );
 }
 
