@@ -53,8 +53,8 @@ export default function SettingsPage() {
 
   const handleSaveSettings = async () => {
     try {
-      const faceThreshold = systemSettings.faceThreshold === '' ? 80 : systemSettings.faceThreshold;
-      const gpsRadius = systemSettings.gpsRadius === '' ? 3000 : systemSettings.gpsRadius;
+      const faceThreshold = systemSettings.faceThreshold || 80;
+      const gpsRadius = systemSettings.gpsRadius || 3000;
       
       if (faceThreshold < 50 || faceThreshold > 100) {
         alert('Face Recognition Threshold harus antara 50-100%');
@@ -174,7 +174,7 @@ export default function SettingsPage() {
                 onChange={(e) => {
                   const value = e.target.value;
                   if (value === '') {
-                      setSystemSettings({ ...systemSettings, faceThreshold: '' as any });
+                      setSystemSettings({ ...systemSettings, faceThreshold: 50 });
                   } else {
                     const numValue = parseInt(value);
                     if (!isNaN(numValue)) {
@@ -228,7 +228,7 @@ export default function SettingsPage() {
                 onChange={(e) => {
                   const value = e.target.value;
                   if (value === '') {
-                      setSystemSettings({ ...systemSettings, gpsRadius: '' as any });
+                      setSystemSettings({ ...systemSettings, gpsRadius: 10 });
                   } else {
                     const numValue = parseInt(value);
                     if (!isNaN(numValue)) {
