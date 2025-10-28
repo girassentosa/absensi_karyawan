@@ -194,6 +194,7 @@ export default function EmployeesPage() {
         setFormData({
           employee_code: '',
           full_name: '',
+          username: '',
           email: '',
           password: '',
           phone: '',
@@ -645,6 +646,7 @@ export default function EmployeesPage() {
                     setFormData({
                       employee_code: '',
                       full_name: '',
+                      username: '',
                       email: '',
                       password: '',
                       phone: '',
@@ -740,6 +742,7 @@ export default function EmployeesPage() {
                     setFormData({
                       employee_code: '',
                       full_name: '',
+                      username: '',
                       email: '',
                       password: '',
                       phone: '',
