@@ -8,6 +8,7 @@ interface Employee {
   id: string;
   employee_code: string;
   full_name: string;
+  username?: string;
   email: string;
   phone?: string;
   department?: string;
@@ -160,6 +161,7 @@ export default function EmployeesPage() {
     setFormData({
       employee_code: employee.employee_code,
       full_name: employee.full_name,
+      username: employee.username || '',
       email: employee.email,
       password: '', // Not used in edit mode
       phone: employee.phone || '',
