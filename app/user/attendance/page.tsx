@@ -4,28 +4,17 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import FaceVerificationCamera from '@/components/FaceVerificationCamera';
 import VerificationResultModal from '@/components/VerificationResultModal';
+import UserSidebar, { SidebarToggleButton } from '@/components/UserSidebar';
 
 export default function AttendancePage() {
   const router = useRouter();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [employee, setEmployee] = useState<any>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [todayAttendance, setTodayAttendance] = useState<any>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(false);
-  
-  // Profile modal states
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editFormData, setEditFormData] = useState({
-    username: '',
-    email: '',
-    avatarUrl: '',
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  });
-  const [previewAvatar, setPreviewAvatar] = useState('');
   
   // Verification result modal state
   const [showResultModal, setShowResultModal] = useState(false);
@@ -37,8 +26,11 @@ export default function AttendancePage() {
     error?: string;
   } | null>(null);
   
-  // Processing modal state (intermediate loading after verification)
+  // Processing modal state
   const [showProcessingModal, setShowProcessingModal] = useState(false);
+  
+  // Check-out flag
+  const [isCheckOut, setIsCheckOut] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -48,37 +40,27 @@ export default function AttendancePage() {
     }
     
     const parsedUser = JSON.parse(storedUser);
-    console.log('👤 Logged in user:', parsedUser);
     setUser(parsedUser);
     fetchEmployeeData(parsedUser.email);
     getLocation();
   }, [router]);
 
-  // Fetch attendance after employee data is loaded
   useEffect(() => {
     if (employee) {
-      console.log('👷 Employee data loaded, fetching attendance...');
       fetchTodayAttendance();
     }
   }, [employee]);
 
   const fetchEmployeeData = async (email: string) => {
     try {
-      console.log('🔍 Fetching employee data for email:', email);
       const response = await fetch(`/api/employees?email=${email}`);
       const data = await response.json();
       
-      console.log('📊 Employee API response:', data);
-      
       if (data.success && data.data.length > 0) {
-        console.log('✅ Employee found:', data.data[0]);
         setEmployee(data.data[0]);
-      } else {
-        console.log('❌ No employee found for email:', email);
-        console.log('📋 Available employees:', data.data);
       }
     } catch (error) {
-      console.error('❌ Error fetching employee data:', error);
+      console.error('Error fetching employee data:', error);
     }
   };
 
@@ -91,119 +73,72 @@ export default function AttendancePage() {
             lng: position.coords.longitude,
           });
         },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
+        (error) => console.error('Error getting location:', error)
       );
     }
   };
 
   const fetchTodayAttendance = async () => {
     try {
-      // Wait for employee data to be loaded first
-      if (!employee) {
-        console.log('⏳ Employee data not loaded yet, skipping attendance fetch');
-        return;
-      }
+      if (!employee) return;
 
-      console.log('🔍 Fetching attendance for employee_id:', employee.id);
       const response = await fetch(`/api/attendance/today?employee_id=${employee.id}`);
       const data = await response.json();
       
-      console.log('📊 Attendance API response:', data);
-      
       if (data.success && data.data.length > 0) {
-        console.log('✅ Today attendance found:', data.data[0]);
         setTodayAttendance(data.data[0]);
-      } else {
-        console.log('📅 No attendance record for today');
       }
     } catch (error) {
-      console.error('❌ Error fetching attendance:', error);
+      console.error('Error fetching attendance:', error);
     }
   };
 
-  const handleCheckIn = () => {
-    setShowCamera(true);
-  };
-
-  // State untuk track apakah sedang proses check-in atau check-out
-  const [isCheckOut, setIsCheckOut] = useState(false);
-
-  const handleCheckOut = () => {
-    setIsCheckOut(true);
-    setShowCamera(true);
-  };
-
-  // Get system settings from localStorage (admin settings)
   const getSystemSettings = () => {
     try {
       const savedSettings = localStorage.getItem('systemSettings');
       if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
-        console.log('⚙️ Loaded system settings:', settings);
-        return settings;
+        return JSON.parse(savedSettings);
       }
     } catch (error) {
-      console.error('❌ Error loading system settings:', error);
+      console.error('Error loading system settings:', error);
     }
     
-    // Default settings if not found
-    const defaultSettings = {
-      faceThreshold: 70,
-      gpsRadius: 100
-    };
-    console.log('⚙️ Using default system settings:', defaultSettings);
-    return defaultSettings;
+    return { faceThreshold: 70, gpsRadius: 100 };
   };
 
-  // Validate GPS location against office locations
   const validateGPSLocation = async (userLat: number, userLng: number) => {
     try {
-      console.log('📍 Validating GPS location...');
-      console.log(`📍 User location: ${userLat}, ${userLng}`);
-      
-      // Get GPS radius from admin settings
       const systemSettings = getSystemSettings();
       const maxRadius = systemSettings.gpsRadius;
-      console.log(`⚙️ Using GPS radius: ${maxRadius}m (from admin settings)`);
       
-      // Fetch office locations
       const response = await fetch('/api/office-locations');
       const data = await response.json();
       
       if (!data.success || !data.data.length) {
-        console.log('❌ No office locations found');
         return { valid: false, error: 'Tidak ada lokasi kantor yang terdaftar' };
       }
       
-      // Check if user is within range of any active office location
       for (const office of data.data) {
         if (!office.is_active) continue;
         
         const distance = calculateDistance(userLat, userLng, office.latitude, office.longitude);
-        console.log(`📏 Distance to ${office.name}: ${distance.toFixed(2)}m (max: ${maxRadius}m)`);
         
         if (distance <= maxRadius) {
-          console.log(`✅ User is within range of ${office.name}`);
           return { valid: true, office: office.name, distance: distance.toFixed(2) };
         }
       }
       
-      console.log('❌ User is not within range of any office location');
       return { 
         valid: false, 
         error: `Anda berada di luar jangkauan kantor (maksimal ${maxRadius}m dari lokasi kantor)` 
       };
     } catch (error: any) {
-      console.error('❌ Error validating GPS:', error);
       return { valid: false, error: 'Gagal memvalidasi lokasi GPS' };
     }
   };
 
-  // Calculate distance between two coordinates (Haversine formula)
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    const R = 6371e3; // Earth's radius in meters
+    const R = 6371e3;
     const φ1 = lat1 * Math.PI/180;
     const φ2 = lat2 * Math.PI/180;
     const Δφ = (lat2-lat1) * Math.PI/180;
@@ -214,7 +149,7 @@ export default function AttendancePage() {
               Math.sin(Δλ/2) * Math.sin(Δλ/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
-    return R * c; // Distance in meters
+    return R * c;
   };
 
   const handleFaceVerification = async (result: { 
@@ -225,23 +160,12 @@ export default function AttendancePage() {
     image?: string; 
     error?: string 
   }) => {
-    console.log('🎯 Face verification result:', result);
-
-    // Step 1: Close camera
     setShowCamera(false);
-    
-    // Step 2: Show processing modal
     setShowProcessingModal(true);
-    console.log('⏳ Showing processing modal...');
     
-    // Step 3: Simulate processing (2 seconds)
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Step 4: Close processing modal
     setShowProcessingModal(false);
-    console.log('✅ Processing complete, showing result modal...');
-    
-    // Step 5: Store result and show result modal
     setVerificationResult(result);
     setShowResultModal(true);
   };
@@ -258,14 +182,12 @@ export default function AttendancePage() {
         return;
       }
 
-      // Validate GPS location
       if (!location) {
         alert('❌ Lokasi GPS tidak tersedia. Pastikan GPS aktif dan izin lokasi diberikan.');
         setLoading(false);
         return;
       }
 
-      console.log('📍 Validating GPS location...');
       const gpsValidation = await validateGPSLocation(location.lat, location.lng);
       
       if (!gpsValidation.valid) {
@@ -274,10 +196,7 @@ export default function AttendancePage() {
         return;
       }
 
-      // Check if this is check-in or check-out
       if (isCheckOut) {
-        // Handle check-out
-        console.log('🚪 Verification successful, proceeding with check-out...');
         const response = await fetch('/api/attendance/check-out', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -293,257 +212,236 @@ export default function AttendancePage() {
         if (data.success) {
           alert(`✅ Check-out berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${new Date().toLocaleString()}`);
           fetchTodayAttendance();
-          setIsCheckOut(false); // Reset flag
+          setIsCheckOut(false);
         } else {
           alert(`❌ Check-out gagal: ${data.error || 'Unknown error'}`);
         }
       } else {
-        // Handle check-in
-      console.log('✅ Verification successful, proceeding with check-in...');
-      const response = await fetch('/api/attendance/check-in', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employee_id: employee.id,
+        const response = await fetch('/api/attendance/check-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employee_id: employee.id,
             face_match_score: verificationResult.score,
-          latitude: location?.lat,
-          longitude: location?.lng,
-        }),
-      });
+            latitude: location?.lat,
+            longitude: location?.lng,
+          }),
+        });
 
-      const data = await response.json();
-      if (data.success) {
+        const data = await response.json();
+        if (data.success) {
           alert(`✅ Check-in berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${new Date().toLocaleString()}`);
-        fetchTodayAttendance();
-      } else {
-        alert(`❌ Check-in gagal: ${data.error || 'Unknown error'}`);
+          fetchTodayAttendance();
+        } else {
+          alert(`❌ Check-in gagal: ${data.error || 'Unknown error'}`);
         }
       }
     } catch (error: any) {
-      console.error('❌ Error:', error);
       alert(`❌ ${isCheckOut ? 'Check-out' : 'Check-in'} gagal: ${error.message || 'Network error'}`);
     } finally {
       setLoading(false);
     }
   };
 
-
-  // Profile modal handlers
-  const handleOpenProfileModal = () => {
-    setShowProfileModal(true);
-  };
-
-  const handleOpenEditModal = () => {
-    setShowProfileModal(false);
-    const avatarUrl = user?.avatar_url || '/images/profile1.jpg';
-    setEditFormData({
-      username: user?.username || '',
-      email: user?.email || '',
-      avatarUrl: avatarUrl,
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    });
-    setPreviewAvatar(avatarUrl);
-    setShowEditModal(true);
-  };
-
-  const handleAvatarUrlChange = (url: string) => {
-    setEditFormData({ ...editFormData, avatarUrl: url });
-    setPreviewAvatar(url);
-  };
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validation
-    if (!editFormData.username || editFormData.username.trim() === '') {
-      alert('Username tidak boleh kosong!');
-      return;
-    }
-
-    if (!editFormData.email || editFormData.email.trim() === '') {
-      alert('Email tidak boleh kosong!');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(editFormData.email)) {
-      alert('Format email tidak valid!');
-      return;
-    }
-
-    if (editFormData.newPassword && editFormData.newPassword !== editFormData.confirmPassword) {
-      alert('Password baru dan konfirmasi password tidak cocok!');
-      return;
-    }
-
-    if (editFormData.newPassword && editFormData.newPassword.length < 6) {
-      alert('Password baru minimal 6 karakter!');
-      return;
-    }
-
-    if (editFormData.newPassword && !editFormData.currentPassword) {
-      alert('Password saat ini harus diisi untuk mengganti password!');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/auth/update-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentEmail: user.email,
-          newEmail: editFormData.email,
-          username: editFormData.username,
-          currentPassword: editFormData.currentPassword || undefined,
-          newPassword: editFormData.newPassword || undefined,
-          avatarUrl: editFormData.avatarUrl,
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        const updatedUser = {
-          ...user,
-          username: data.updatedUsername || editFormData.username,
-          email: data.updatedEmail || editFormData.email,
-          avatar_url: editFormData.avatarUrl
-        };
-        setUser(updatedUser);
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-
-        alert('✅ Profile berhasil diupdate!');
-        setShowEditModal(false);
-        
-        setEditFormData({
-          ...editFormData,
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        });
-      } else {
-        alert(data.error || 'Gagal update profile');
-      }
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      alert('Gagal update profile');
-    }
-  };
-
-  const getInitials = (email: string) => {
-    if (!email) return 'U';
-    const name = email.split('@')[0];
+  const getInitials = (name: string) => {
+    if (!name) return 'U';
     return name.substring(0, 2).toUpperCase();
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    router.push('/user');
+  const formatTime = (dateString: string) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 md:py-12">
-        <div className="flex items-center justify-between gap-3 mb-8">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white">Absensi Karyawan</h1>
-          
-          <div className="flex items-center gap-2">
-            {/* Profile Section */}
-            <button
-              onClick={handleOpenProfileModal}
-              className="flex items-center gap-2 sm:gap-3 hover:bg-white/5 rounded-xl p-2 transition-all group"
-            >
-              {user?.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt="Profile"
-                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover shadow-lg group-hover:scale-110 transition-transform border-2 border-white/20"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-              ) : null}
-              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-base sm:text-lg shadow-lg group-hover:scale-110 transition-transform ${user?.avatar_url ? 'hidden' : ''}`}>
-                {getInitials(user?.email || '')}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <UserSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+
+      <div className="lg:ml-64 min-h-screen">
+        {/* Header */}
+        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200 shadow-sm">
+          <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
+                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">Absensi</h1>
+                  <p className="text-xs sm:text-sm text-slate-500 truncate">{currentDate}</p>
+                </div>
               </div>
-              <div className="text-left hidden sm:block flex-shrink-0">
-                <p className="text-white font-semibold text-sm">{user?.username || 'User'}</p>
-                <p className="text-white/60 text-xs">Karyawan</p>
-          </div>
-            </button>
-            
-            {/* Logout Button */}
-          <button
-              onClick={handleLogout}
-              className="bg-white/10 hover:bg-white/20 backdrop-blur-lg border border-white/20 text-white font-semibold py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg sm:rounded-xl shadow-lg transition-all text-xs sm:text-sm flex items-center gap-1.5"
-          >
-              🚪 Logout
-          </button>
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
-          {/* Check-in Card */}
-          <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4">Check In</h2>
-            <button
-              onClick={() => {
-                if (!employee?.face_encoding_path) {
-                  alert('Wajah Anda belum dilatih. Silakan hubungi admin untuk melakukan pelatihan wajah.');
-                  return;
-                }
-                setShowCamera(true);
-              }}
-              disabled={todayAttendance || loading}
-              className="w-full bg-gradient-to-r from-green-400 to-emerald-500 text-white font-bold py-3 sm:py-4 px-4 sm:px-6 rounded-lg sm:rounded-xl hover:from-green-500 hover:to-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-            >
-              {loading ? 'Processing...' : 'Check In with Face'}
-            </button>
-            {!employee ? (
-              <p className="text-red-300 text-xs sm:text-sm mt-2 text-center">
-                ❌ Data karyawan tidak ditemukan. Hubungi admin.
-              </p>
-            ) : !employee.face_encoding_path ? (
-              <p className="text-yellow-300 text-xs sm:text-sm mt-2 text-center">
-                ⚠️ Wajah belum dilatih. Hubungi admin untuk pelatihan.
-              </p>
-            ) : (
-              <p className="text-green-300 text-xs sm:text-sm mt-2 text-center">
-                ✅ Wajah sudah dilatih. Siap untuk check-in.
-              </p>
-            )}
-          </div>
-
-          {/* Check-out Card */}
-          <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4">Check Out</h2>
-            <button
-              onClick={handleCheckOut}
-              disabled={!todayAttendance || todayAttendance.check_out_time || loading}
-              className="w-full bg-gradient-to-r from-red-400 to-pink-500 text-white font-bold py-3 sm:py-4 px-4 sm:px-6 rounded-lg sm:rounded-xl hover:from-red-500 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-            >
-              {loading ? 'Processing...' : 'Check out with Face'}
-            </button>
-          </div>
-        </div>
-
-        {/* Today's Status */}
-        {todayAttendance && (
-          <div className="mt-6 sm:mt-8 bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">Today's Status</h3>
-            <div className="space-y-2 text-white/80 text-sm sm:text-base">
-              <p>Check-in: {new Date(todayAttendance.check_in_time).toLocaleString()}</p>
-              {todayAttendance.check_out_time && (
-                <p>Check-out: {new Date(todayAttendance.check_out_time).toLocaleString()}</p>
-              )}
             </div>
           </div>
-        )}
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Employee Info Card */}
+          {employee && (
+            <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 shadow-sm border border-slate-200">
+              <div className="flex items-center gap-4">
+                {employee.avatar_url ? (
+                  <img 
+                    src={employee.avatar_url} 
+                    alt={employee.full_name}
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shadow-sm border-2 border-white"
+                  />
+                ) : (
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl shadow-sm">
+                    {getInitials(employee.full_name)}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 truncate">{employee.full_name}</h2>
+                  <p className="text-sm text-slate-500">{employee.employee_code}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md text-xs font-semibold">
+                      {employee.department || 'No Department'}
+                    </span>
+                    {employee.face_encoding_path && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-md text-xs font-semibold">
+                        ✓ Wajah Terlatih
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Check In/Out Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6">
+            {/* Check In Card */}
+            <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-all">
+              <div className="bg-gradient-to-br from-green-500 via-emerald-500 to-teal-600 p-4 sm:p-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-bold text-white">Check In</h3>
+                    <p className="text-xs text-white/80">Masuk kantor</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 sm:p-5">
+                <button
+                  onClick={() => {
+                    if (!employee?.face_encoding_path) {
+                      alert('Wajah Anda belum dilatih. Silakan hubungi admin untuk melakukan pelatihan wajah.');
+                      return;
+                    }
+                    setIsCheckOut(false);
+                    setShowCamera(true);
+                  }}
+                  disabled={todayAttendance || loading}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg text-sm sm:text-base flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {loading ? 'Processing...' : 'Check In with Face'}
+                </button>
+                {todayAttendance && (
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-xs text-green-700 font-semibold flex items-center gap-1.5">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Sudah Check-in: {formatTime(todayAttendance.check_in_time)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Check Out Card */}
+            <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-all">
+              <div className="bg-gradient-to-br from-red-500 via-pink-500 to-rose-600 p-4 sm:p-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-bold text-white">Check Out</h3>
+                    <p className="text-xs text-white/80">Pulang kantor</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 sm:p-5">
+                <button
+                  onClick={() => {
+                    setIsCheckOut(true);
+                    setShowCamera(true);
+                  }}
+                  disabled={!todayAttendance || todayAttendance.check_out_time || loading}
+                  className="w-full bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white font-bold py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg text-sm sm:text-base flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {loading ? 'Processing...' : 'Check out with Face'}
+                </button>
+                {todayAttendance?.check_out_time && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-xs text-red-700 font-semibold flex items-center gap-1.5">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Sudah Check-out: {formatTime(todayAttendance.check_out_time)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Today's Attendance Summary */}
+          {todayAttendance && (
+            <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                Ringkasan Absensi Hari Ini
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3 sm:p-4">
+                  <p className="text-xs text-green-600 font-medium mb-1">Check-in</p>
+                  <p className="text-lg sm:text-xl font-bold text-green-700">{formatTime(todayAttendance.check_in_time)}</p>
+                  <p className="text-xs text-green-600 mt-1">{new Date(todayAttendance.check_in_time).toLocaleDateString('id-ID')}</p>
+                </div>
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-3 sm:p-4">
+                  <p className="text-xs text-indigo-600 font-medium mb-1">Check-out</p>
+                  <p className="text-lg sm:text-xl font-bold text-indigo-700">
+                    {todayAttendance.check_out_time ? formatTime(todayAttendance.check_out_time) : 'Belum Check-out'}
+                  </p>
+                  {todayAttendance.check_out_time && (
+                    <p className="text-xs text-indigo-600 mt-1">{new Date(todayAttendance.check_out_time).toLocaleDateString('id-ID')}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Face Verification Camera */}
       {showCamera && employee?.face_encoding_path && (
         <FaceVerificationCamera
           storedFaceEncoding={employee.face_encoding_path}
@@ -556,34 +454,28 @@ export default function AttendancePage() {
         />
       )}
 
-      {/* Processing Modal (Intermediate Loading) */}
+      {/* Processing Modal */}
       {showProcessingModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl sm:rounded-3xl p-8 sm:p-10 md:p-12 max-w-xs sm:max-w-md w-full shadow-2xl">
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-8 sm:p-10 md:p-12 max-w-xs sm:max-w-md w-full shadow-2xl animate-fadeIn">
             <div className="text-center">
-              {/* Animated Spinner */}
               <div className="flex justify-center mb-6">
                 <div className="relative">
-                  {/* Outer rotating ring */}
                   <div className="w-20 h-20 sm:w-24 sm:h-24 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                  {/* Inner pulsing circle */}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-12 h-12 sm:w-14 sm:h-14 bg-blue-500 rounded-full animate-pulse opacity-50"></div>
                   </div>
                 </div>
               </div>
               
-              {/* Title */}
               <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">
                 Memproses Hasil Verifikasi
               </h3>
               
-              {/* Description */}
               <p className="text-sm sm:text-base text-gray-600 mb-6">
                 Mohon tunggu sebentar, kami sedang memproses data verifikasi wajah Anda...
               </p>
               
-              {/* Progress dots */}
               <div className="flex justify-center gap-2">
                 <div className="w-2 h-2 sm:w-3 sm:h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
                 <div className="w-2 h-2 sm:w-3 sm:h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
@@ -615,261 +507,12 @@ export default function AttendancePage() {
             handleContinueAfterVerification();
           }}
           onRetry={() => {
-            // Retry = Buka kamera lagi (sama seperti klik "Check in with Face")
             setShowResultModal(false);
             setVerificationResult(null);
-            setShowCamera(true); // ← Buka kamera lagi!
+            setShowCamera(true);
           }}
         />
-      )}
-
-      {/* Profile Modal (View) */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4" onClick={() => setShowProfileModal(false)}>
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-white/10" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-center mb-4 sm:mb-6">
-              {user?.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt="Profile"
-                  className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover shadow-2xl border-4 border-white/20"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-              ) : null}
-              <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-3xl sm:text-5xl shadow-2xl ${user?.avatar_url ? 'hidden' : ''}`}>
-                {getInitials(user?.email || '')}
-              </div>
-            </div>
-            <div className="text-center mb-4 sm:mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">{user?.username || 'User'}</h2>
-              <p className="text-white/60 text-xs sm:text-sm mb-1 truncate">{user?.email || ''}</p>
-              <span className="inline-block px-2 sm:px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs font-semibold border border-blue-500/50">
-                Karyawan
-              </span>
-            </div>
-            <div className="space-y-2 sm:space-y-3">
-              <button
-                onClick={handleOpenEditModal}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg sm:rounded-xl shadow-lg transition-all text-sm sm:text-base"
-              >
-                ✏️ Edit Profile
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-
-      {/* Edit Profile Modal - 2 Column Layout (Same as Admin) - Copy dari admin */}
-      {showEditModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 md:p-6" onClick={() => setShowEditModal(false)}>
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 max-w-full sm:max-w-2xl lg:max-w-4xl w-full shadow-2xl border border-white/10 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4 sm:mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-white">✏️ Edit Profile</h2>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="text-white/60 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-lg"
-              >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateProfile} className="space-y-4 sm:space-y-6">
-              {/* Profile Photo Section - Full Width */}
-              <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
-                <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base flex items-center gap-2">
-                  <span>📸</span> Foto Profile
-                </h3>
-                
-                <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6">
-                  <div className="flex-shrink-0">
-                    {previewAvatar ? (
-                      <img
-                        src={previewAvatar}
-                        alt="Preview"
-                        className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover shadow-xl border-4 border-white/20"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-3xl shadow-xl ${previewAvatar ? 'hidden' : ''}`}>
-                      {getInitials(user?.email || '')}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 w-full">
-                    <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
-                      URL Foto
-                    </label>
-                    <input
-                      type="text"
-                      value={editFormData.avatarUrl}
-                      onChange={(e) => handleAvatarUrlChange(e.target.value)}
-                      className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
-                      placeholder="/images/profile1.jpg"
-                    />
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleAvatarUrlChange('/images/profile1.jpg')}
-                        className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs rounded-md border border-blue-500/50 transition-all"
-                      >
-                        profile1
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAvatarUrlChange('/images/profile2.jpg')}
-                        className="px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 text-xs rounded-md border border-purple-500/50 transition-all"
-                      >
-                        profile2
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAvatarUrlChange('/images/profile3.jpg')}
-                        className="px-3 py-1 bg-pink-500/20 hover:bg-pink-500/30 text-pink-400 text-xs rounded-md border border-pink-500/50 transition-all"
-                      >
-                        profile3
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 2 Column Layout: Account Info & Security */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
-                  <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base flex items-center gap-2">
-                    <span>👤</span> Informasi Akun
-                  </h3>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
-                        Username <span className="text-blue-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={editFormData.username}
-                        onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })}
-                        className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
-                        placeholder="Masukkan username"
-                        required
-                      />
-                      <p className="text-white/40 text-xs mt-1">Untuk login</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
-                        Email <span className="text-blue-400">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        value={editFormData.email}
-                        onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                        className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
-                        placeholder="Masukkan email"
-                        required
-                      />
-                      <p className="text-white/40 text-xs mt-1">Email kontak</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
-                  <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base flex items-center gap-2">
-                    <span>🔒</span> Keamanan <span className="text-white/40 text-xs font-normal">(Opsional)</span>
-                  </h3>
-                  
-                  <div className="space-y-4">
-              <div>
-                      <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
-                        Password Saat Ini
-                      </label>
-                <input
-                  type="password"
-                        value={editFormData.currentPassword}
-                        onChange={(e) => setEditFormData({ ...editFormData, currentPassword: e.target.value })}
-                        className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
-                        placeholder="Password lama"
-                />
-              </div>
-
-              <div>
-                      <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
-                        Password Baru
-                      </label>
-                <input
-                  type="password"
-                        value={editFormData.newPassword}
-                        onChange={(e) => setEditFormData({ ...editFormData, newPassword: e.target.value })}
-                        className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
-                        placeholder="Min. 6 karakter"
-                  minLength={6}
-                />
-              </div>
-
-              <div>
-                      <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
-                        Konfirmasi Password
-                      </label>
-                <input
-                  type="password"
-                        value={editFormData.confirmPassword}
-                        onChange={(e) => setEditFormData({ ...editFormData, confirmPassword: e.target.value })}
-                        className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
-                        placeholder="Ulangi password"
-                  minLength={6}
-                />
-              </div>
-
-                    <p className="text-white/40 text-xs">
-                      💡 Kosongkan jika tidak ingin mengubah password
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all text-sm sm:text-base flex items-center justify-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Simpan Perubahan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="flex-1 sm:flex-none bg-white/10 hover:bg-white/20 text-white font-semibold py-3 px-6 rounded-xl border border-white/20 transition-all text-sm sm:text-base"
-                >
-                  Batal
-                </button>
-              </div>
-
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 sm:p-4">
-                <p className="text-blue-300 text-xs sm:text-sm flex items-start gap-2">
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                  <span>
-                    <strong>Username & Email</strong> akan langsung tersimpan. <strong>Password</strong> hanya berubah jika diisi semua field password.
-                  </span>
-                </p>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
     </div>
   );
 }
-

@@ -194,7 +194,7 @@ export async function performRealTimeTraining(
 
       if (result.detected && result.descriptor) {
         // ⚡ Check if this frame is GOOD (>= 85%)
-        if (result.confidence >= targetConfidence) {
+    if (result.confidence >= targetConfidence) {
           // ✅ DAPAT FRAME BAGUS!
           console.log(`✅ FRAME ${currentFrameIndex + 1}/${requiredGoodFrames} CAPTURED! Confidence: ${result.confidence}%`);
           
@@ -215,7 +215,7 @@ export async function performRealTimeTraining(
           // ⚡ Check if we have all 5 frames
           if (goodFrames.length >= requiredGoodFrames) {
             // ✅ SEMUA FRAME SUDAH DAPAT!
-            isAnalyzing = false;
+        isAnalyzing = false;
             
             // Calculate statistics
             const confidences = goodFrames.map(f => f.confidence);
@@ -262,7 +262,7 @@ export async function performRealTimeTraining(
                 `• Pastikan kamera fokus & stabil\n` +
                 `• Jarak tetap (30-50 cm)`
               );
-              return;
+        return;
             }
           }
           
@@ -275,11 +275,11 @@ export async function performRealTimeTraining(
         } else {
           // ⚠️ Frame belum cukup bagus, terus cari!
           console.log(`🔄 Loading... ${result.confidence}% (need >= ${targetConfidence}%)`);
-        }
-      } else {
+      }
+    } else {
         // No face detected
         console.log(`👤 No face detected, keep looking...`);
-      }
+    }
 
     // Continue analyzing ONLY if still active
     if (isAnalyzing) {
@@ -453,8 +453,8 @@ export async function performInstantVerification(
           });
 
           // Track best
-          if (similarity > bestSimilarity) {
-            bestSimilarity = similarity;
+      if (similarity > bestSimilarity) {
+        bestSimilarity = similarity;
             bestConfidence = result.confidence;
           }
 
@@ -520,7 +520,7 @@ export async function performInstantVerification(
               
               if (gap <= maxGapFromTraining) {
                 console.log(`✅ PASS! Gap ${gap.toFixed(1)}% <= ${maxGapFromTraining}%`);
-              } else {
+      } else {
                 console.warn(`⚠️ WARNING! Gap ${gap.toFixed(1)}% > ${maxGapFromTraining}%`);
                 // Don't fail, just warn (gap check is supplementary)
               }
@@ -560,7 +560,7 @@ export async function performInstantVerification(
 
       // Continue loop
       if (isAnalyzing) {
-        requestAnimationFrame(analyzeFrame);
+    requestAnimationFrame(analyzeFrame);
       }
     } catch (error: any) {
       console.error('❌ Verification error:', error);
@@ -635,7 +635,7 @@ export async function getSystemSettings() {
   }
   
   // Default settings
-    return {
+      return { 
     faceThreshold: 80,
     gpsRadius: 3000
   };

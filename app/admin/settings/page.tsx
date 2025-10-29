@@ -2,14 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
 
 export default function SettingsPage() {
   const router = useRouter();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [systemSettings, setSystemSettings] = useState({
     faceThreshold: 80,
     gpsRadius: 3000,
   });
+
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    router.push('/admin');
+  };
 
   useEffect(() => {
     checkAuth();
@@ -24,7 +31,7 @@ export default function SettingsPage() {
     }
     const parsedUser = JSON.parse(storedUser);
     if (parsedUser.role !== 'admin') {
-      router.push('/user/attendance');
+      router.push('/user/dashboard');
     }
   };
 
@@ -100,43 +107,66 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Memuat...</div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Memuat pengaturan...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <header className="bg-white/10 backdrop-blur-lg border-b border-white/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/admin/dashboard')}
-              className="text-white/80 hover:text-white transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white">Pengaturan Sistem</h1>
-              <p className="text-white/60 text-sm mt-1">Konfigurasi Face Recognition & GPS Validation</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <AdminSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+
+
+      <div className="lg:ml-64 min-h-screen">
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200 shadow-sm">
+        <div className="px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            {/* Page Title */}
+            <div className="flex items-center gap-3 flex-1 lg:flex-none">
+              <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <span>Pengaturan</span>
+              </h2>
             </div>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span className="hidden sm:inline">Keluar</span>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Main Content */}
+      <main className="p-4 sm:p-6 lg:p-8">
+        <div className="max-w-4xl mx-auto">
+
         {/* Info Card */}
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-6">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl sm:rounded-2xl p-4 sm:p-5 mb-6">
           <div className="flex gap-3">
-            <svg className="w-6 h-6 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <div className="text-sm text-white/80">
-              <p className="font-semibold text-white mb-1">Informasi:</p>
-              <ul className="space-y-1 text-white/70">
+            <div className="text-sm text-slate-700">
+              <p className="font-bold text-slate-900 mb-1">Informasi Penting:</p>
+              <ul className="space-y-1">
                 <li>• Pengaturan ini berlaku untuk <strong>semua karyawan</strong></li>
                 <li>• Untuk mengatur <strong>lokasi kantor</strong>, gunakan menu <strong>"Lokasi Kantor"</strong> di dashboard</li>
                 <li>• Perubahan langsung tersimpan ke database</li>
@@ -146,26 +176,31 @@ export default function SettingsPage() {
                 </div>
 
         {/* System Settings */}
-        <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl p-6 sm:p-8">
-          <h2 className="text-xl sm:text-2xl font-bold text-white mb-6">Pengaturan Validasi</h2>
+        <div className="bg-white rounded-xl sm:rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+            <svg className="w-7 h-7 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            <span>Pengaturan Validasi</span>
+          </h2>
           
           <div className="space-y-6">
             {/* Face Recognition Threshold */}
-            <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-5 sm:p-6 border border-purple-200">
               <div className="flex items-start gap-4 mb-4">
-                <div className="bg-purple-500/20 p-3 rounded-lg">
-                  <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white mb-1">Face Recognition Threshold</h3>
-                  <p className="text-white/60 text-sm">Minimal similarity score untuk verifikasi wajah berhasil</p>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">Face Recognition Threshold</h3>
+                  <p className="text-slate-600 text-sm">Minimal similarity score untuk verifikasi wajah berhasil</p>
           </div>
         </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <input
                 type="number"
                   min="50"
@@ -182,44 +217,44 @@ export default function SettingsPage() {
                       }
                     }
                   }}
-                  className="w-32 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full sm:w-32 bg-white border-2 border-purple-300 rounded-lg px-4 py-3 text-slate-900 text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
                   placeholder="80"
                 />
-                <div className="flex-1">
+                <div className="flex-1 w-full">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-white/60 text-sm">50%</span>
-                    <span className="text-white font-semibold">{systemSettings.faceThreshold}%</span>
-                    <span className="text-white/60 text-sm">100%</span>
+                    <span className="text-slate-500 text-sm font-medium">50%</span>
+                    <span className="text-purple-600 font-bold text-lg">{systemSettings.faceThreshold}%</span>
+                    <span className="text-slate-500 text-sm font-medium">100%</span>
                   </div>
-                  <div className="w-full bg-white/10 rounded-full h-2">
+                  <div className="w-full bg-purple-200 rounded-full h-3 overflow-hidden">
                     <div 
-                      className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
+                      className="bg-gradient-to-r from-purple-500 to-pink-500 h-3 rounded-full transition-all duration-300 shadow-md"
                       style={{ width: `${systemSettings.faceThreshold}%` }}
                     ></div>
                   </div>
-                  <p className="text-white/40 text-xs mt-2">
-                    Rekomendasi: 70-85% (lebih tinggi = lebih ketat)
+                  <p className="text-slate-500 text-xs mt-2">
+                    💡 Rekomendasi: 70-85% (lebih tinggi = lebih ketat)
                   </p>
                 </div>
               </div>
             </div>
 
             {/* GPS Accuracy Radius */}
-            <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 sm:p-6 border border-green-200">
               <div className="flex items-start gap-4 mb-4">
-                <div className="bg-green-500/20 p-3 rounded-lg">
-                  <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
             </div>
               <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white mb-1">GPS Accuracy Radius</h3>
-                  <p className="text-white/60 text-sm">Jarak maksimal dari lokasi kantor untuk check-in valid</p>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">GPS Accuracy Radius</h3>
+                  <p className="text-slate-600 text-sm">Jarak maksimal dari lokasi kantor untuk check-in valid</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <input
                 type="number"
                   min="10"
@@ -236,23 +271,23 @@ export default function SettingsPage() {
                       }
                     }
                   }}
-                  className="w-32 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full sm:w-32 bg-white border-2 border-green-300 rounded-lg px-4 py-3 text-slate-900 text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
                   placeholder="3000"
                 />
-                <div className="flex-1">
+                <div className="flex-1 w-full">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-white/60 text-sm">10m</span>
-                    <span className="text-white font-semibold">{systemSettings.gpsRadius} meter</span>
-                    <span className="text-white/60 text-sm">10km</span>
+                    <span className="text-slate-500 text-sm font-medium">10m</span>
+                    <span className="text-green-600 font-bold text-lg">{systemSettings.gpsRadius}m</span>
+                    <span className="text-slate-500 text-sm font-medium">10km</span>
                   </div>
-                  <div className="w-full bg-white/10 rounded-full h-2">
+                  <div className="w-full bg-green-200 rounded-full h-3 overflow-hidden">
                     <div 
-                      className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all duration-300 shadow-md"
                       style={{ width: `${Math.min((systemSettings.gpsRadius / 10000) * 100, 100)}%` }}
                     ></div>
                   </div>
-                  <p className="text-white/40 text-xs mt-2">
-                    Rekomendasi: 100-5000m (tergantung area kantor)
+                  <p className="text-slate-500 text-xs mt-2">
+                    💡 Rekomendasi: 100-5000m (tergantung area kantor)
                   </p>
                 </div>
               </div>
@@ -260,18 +295,24 @@ export default function SettingsPage() {
             </div>
 
           {/* Summary & Save */}
-          <div className="mt-8 pt-6 border-t border-white/10">
+          <div className="mt-8 pt-6 border-t border-slate-200">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="text-white/60 text-sm">
-                <p className="font-semibold text-white mb-2">Ringkasan Pengaturan:</p>
-                <ul className="space-y-1">
-                  <li>• Face Threshold: <span className="text-purple-400 font-bold">{systemSettings.faceThreshold}%</span></li>
-                  <li>• GPS Radius: <span className="text-green-400 font-bold">{systemSettings.gpsRadius} meter</span></li>
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <p className="font-bold text-slate-900 mb-2 text-sm">Ringkasan Pengaturan:</p>
+                <ul className="space-y-1 text-sm text-slate-600">
+                  <li className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                    <span>Face Threshold: <span className="text-purple-600 font-bold">{systemSettings.faceThreshold}%</span></span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span>GPS Radius: <span className="text-green-600 font-bold">{systemSettings.gpsRadius} meter</span></span>
+                  </li>
                 </ul>
               </div>
               <button 
                 onClick={handleSaveSettings}
-                className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -279,9 +320,11 @@ export default function SettingsPage() {
                 Simpan Pengaturan
               </button>
             </div>
+            </div>
           </div>
         </div>
       </main>
+          </div>
     </div>
   );
 }

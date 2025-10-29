@@ -54,8 +54,8 @@ function UserLoginForm() {
         localStorage.setItem('user', JSON.stringify(data.user));
       }
 
-      // Redirect to user attendance page
-      router.push('/user/attendance');
+      // Redirect to user dashboard
+      router.push('/user/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {

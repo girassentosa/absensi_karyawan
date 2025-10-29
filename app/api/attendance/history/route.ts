@@ -11,7 +11,15 @@ export async function GET(request: NextRequest) {
 
     let query = supabaseServer
       .from('attendance')
-      .select('*, employees(*)')
+      .select(`
+        *,
+        employees(
+          *,
+          app_users!employees_user_id_fkey (
+            avatar_url
+          )
+        )
+      `)
       .order('check_in_time', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -23,9 +31,19 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    // Flatten the data to include avatar_url from app_users
+    const flattenedData = data?.map((attendance: any) => ({
+      ...attendance,
+      employees: {
+        ...attendance.employees,
+        avatar_url: attendance.employees?.app_users?.avatar_url || null,
+        app_users: undefined
+      }
+    })) || [];
+
     return NextResponse.json({ 
       success: true, 
-      data 
+      data: flattenedData 
     });
   } catch (error: any) {
     return NextResponse.json(

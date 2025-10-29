@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
 
 interface OfficeLocation {
   id: string;
@@ -16,6 +17,7 @@ interface OfficeLocation {
 
 export default function OfficeLocationsPage() {
   const router = useRouter();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [locations, setLocations] = useState<OfficeLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -28,8 +30,12 @@ export default function OfficeLocationsPage() {
     radius: '100',
   });
 
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    router.push('/admin');
+  };
+
   useEffect(() => {
-    // Check if user is admin
     const user = localStorage.getItem('user');
     if (!user) {
       router.push('/admin');
@@ -38,7 +44,7 @@ export default function OfficeLocationsPage() {
 
     const parsedUser = JSON.parse(user);
     if (parsedUser.role !== 'admin') {
-      router.push('/');
+      router.push('/user/dashboard');
       return;
     }
 
@@ -88,7 +94,6 @@ export default function OfficeLocationsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
     if (!formData.name || !formData.latitude || !formData.longitude) {
       alert('Nama, Latitude, dan Longitude harus diisi!');
       return;
@@ -221,166 +226,193 @@ export default function OfficeLocationsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Memuat data lokasi...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <AdminSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+
+
+      <div className="lg:ml-64 min-h-screen">
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-8">
-        <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={() => router.push('/admin/dashboard')}
-            className="text-white/80 hover:text-white transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">Kelola Lokasi Kantor</h1>
-            <p className="text-white/60 text-sm mt-1">Atur lokasi kantor untuk validasi GPS check-in karyawan</p>
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200 shadow-sm">
+        <div className="px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            {/* Page Title */}
+            <div className="flex items-center gap-3 flex-1 lg:flex-none">
+              <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <span>Lokasi Kantor</span>
+              </h2>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleOpenAddModal}
+                className="px-3 sm:px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg text-green-600 hover:text-green-700 text-sm font-semibold transition-all flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline">Tambah</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Keluar</span>
+              </button>
+            </div>
           </div>
         </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="p-4 sm:p-6 lg:p-8">
+        <div className="max-w-7xl mx-auto">
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Total Lokasi</p>
-                <p className="text-3xl font-bold text-white mt-1">{locations.length}</p>
-              </div>
-              <div className="bg-blue-500/20 p-3 rounded-lg">
-                <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
+              <div>
+                <p className="text-sm text-slate-500 font-medium">Total Lokasi</p>
+                <p className="text-2xl font-bold text-slate-900">{locations.length}</p>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Lokasi Aktif</p>
-                <p className="text-3xl font-bold text-green-400 mt-1">{activeLocations.length}</p>
-              </div>
-              <div className="bg-green-500/20 p-3 rounded-lg">
-                <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-green-200 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
+              <div>
+                <p className="text-sm text-slate-500 font-medium">Lokasi Aktif</p>
+                <p className="text-2xl font-bold text-green-600">{activeLocations.length}</p>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Lokasi Nonaktif</p>
-                <p className="text-3xl font-bold text-orange-400 mt-1">{inactiveLocations.length}</p>
-              </div>
-              <div className="bg-orange-500/20 p-3 rounded-lg">
-                <svg className="w-8 h-8 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-orange-200 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 font-medium">Nonaktif</p>
+                <p className="text-2xl font-bold text-orange-600">{inactiveLocations.length}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Add Button */}
-        <button
-          onClick={handleOpenAddModal}
-          className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Tambah Lokasi Kantor
-        </button>
-      </div>
-
-      {/* Locations List */}
-      <div className="max-w-7xl mx-auto">
+        {/* Locations List */}
         {locations.length === 0 ? (
-          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-12 border border-white/20 text-center">
-            <svg className="w-16 h-16 text-white/40 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <p className="text-white/60 text-lg">Belum ada lokasi kantor</p>
-            <p className="text-white/40 text-sm mt-2">Klik tombol "Tambah Lokasi Kantor" untuk menambahkan lokasi baru</p>
+          <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-slate-200">
+            <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Belum Ada Lokasi</h3>
+            <p className="text-slate-500 mb-4">Klik tombol "Tambah Lokasi" untuk menambahkan lokasi kantor baru</p>
+            <button
+              onClick={handleOpenAddModal}
+              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+            >
+              Tambah Lokasi Pertama
+            </button>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="space-y-4">
             {locations.map((location) => (
               <div
                 key={location.id}
-                className={`bg-white/10 backdrop-blur-lg rounded-xl p-6 border ${
-                  location.is_active ? 'border-green-500/50' : 'border-white/20'
-                } hover:bg-white/15 transition-all duration-200`}
+                className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all"
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex flex-col lg:flex-row gap-4">
+                  {/* Location Info */}
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-bold text-white">{location.name}</h3>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      <h3 className="text-lg sm:text-xl font-bold text-slate-900">{location.name}</h3>
+                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border ${
                         location.is_active 
-                          ? 'bg-green-500/20 text-green-400 border border-green-500/50' 
-                          : 'bg-gray-500/20 text-gray-400 border border-gray-500/50'
+                          ? 'bg-green-50 text-green-700 border-green-200' 
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
                       }`}>
-                        {location.is_active ? 'Aktif' : 'Nonaktif'}
+                        <span>{location.is_active ? '●' : '○'}</span>
+                        <span>{location.is_active ? 'Aktif' : 'Nonaktif'}</span>
                       </span>
                     </div>
                     {location.address && (
-                      <p className="text-white/60 text-sm mb-3">{location.address}</p>
+                      <p className="text-slate-500 text-sm mb-3">{location.address}</p>
                     )}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                      <div className="flex items-center gap-2 text-white/80">
-                        <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-                        </svg>
-                        <span>Lat: {location.latitude}</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                      <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                        <p className="text-xs text-blue-600 font-medium mb-1">Latitude</p>
+                        <p className="text-sm text-slate-900 font-semibold">{location.latitude}</p>
                       </div>
-                      <div className="flex items-center gap-2 text-white/80">
-                        <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-                        </svg>
-                        <span>Lng: {location.longitude}</span>
+                      <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                        <p className="text-xs text-purple-600 font-medium mb-1">Longitude</p>
+                        <p className="text-sm text-slate-900 font-semibold">{location.longitude}</p>
                       </div>
-                      <div className="flex items-center gap-2 text-white/80">
-                        <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                        </svg>
-                        <span>Radius: {location.radius}m</span>
+                      <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                        <p className="text-xs text-orange-600 font-medium mb-1">Radius</p>
+                        <p className="text-sm text-slate-900 font-semibold">{location.radius}m</p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap sm:flex-col gap-2">
+                  {/* Actions */}
+                  <div className="flex lg:flex-col gap-2 lg:justify-center">
                     <button
                       onClick={() => handleToggleActive(location)}
-                      className={`flex-1 sm:flex-none px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+                      className={`flex-1 lg:flex-none px-4 py-2.5 rounded-lg font-semibold text-sm transition-all border ${
                         location.is_active
-                          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50 hover:bg-orange-500/30'
-                          : 'bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500/30'
+                          ? 'bg-orange-50 hover:bg-orange-100 text-orange-600 border-orange-200'
+                          : 'bg-green-50 hover:bg-green-100 text-green-600 border-green-200'
                       }`}
                     >
                       {location.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                     </button>
                     <button
                       onClick={() => handleOpenEditModal(location)}
-                      className="flex-1 sm:flex-none bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 px-4 py-2 rounded-lg font-semibold text-sm transition-all"
+                      className="flex-1 lg:flex-none bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(location)}
-                      className="flex-1 sm:flex-none bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30 px-4 py-2 rounded-lg font-semibold text-sm transition-all"
+                      className="flex-1 lg:flex-none bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all"
                     >
                       Hapus
                     </button>
@@ -394,15 +426,19 @@ export default function OfficeLocationsPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-white/10">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-fadeIn" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                {editingLocation ? 'Edit Lokasi Kantor' : 'Tambah Lokasi Kantor'}
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <svg className="w-7 h-7 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>{editingLocation ? 'Edit Lokasi' : 'Tambah Lokasi'}</span>
               </h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-white/60 hover:text-white transition-colors"
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-lg transition-all"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -412,53 +448,53 @@ export default function OfficeLocationsPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-white/80 mb-2 text-sm font-semibold">
-                  Nama Lokasi <span className="text-red-400">*</span>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">
+                  Nama Lokasi <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   placeholder="Contoh: Kantor Pusat"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-white/80 mb-2 text-sm font-semibold">Alamat</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Alamat</label>
                 <textarea
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   placeholder="Contoh: Jl. Sudirman No. 123, Jakarta"
                   rows={2}
                 />
               </div>
 
-              <div className="flex gap-2 items-end">
+              <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-white/80 mb-2 text-sm font-semibold">
-                    Latitude <span className="text-red-400">*</span>
+                  <label className="block text-slate-700 font-semibold mb-2 text-sm">
+                    Latitude <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.latitude}
                     onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                     placeholder="-6.200000"
                     required
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-white/80 mb-2 text-sm font-semibold">
-                    Longitude <span className="text-red-400">*</span>
+                  <label className="block text-slate-700 font-semibold mb-2 text-sm">
+                    Longitude <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.longitude}
                     onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                     placeholder="106.816666"
                     required
                   />
@@ -468,7 +504,7 @@ export default function OfficeLocationsPage() {
               <button
                 type="button"
                 onClick={handleGetCurrentLocation}
-                className="w-full bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/30 px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                className="w-full bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100 px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -478,19 +514,19 @@ export default function OfficeLocationsPage() {
               </button>
 
               <div>
-                <label className="block text-white/80 mb-2 text-sm font-semibold">
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">
                   Radius (meter)
                 </label>
                 <input
                   type="number"
                   value={formData.radius}
                   onChange={(e) => setFormData({ ...formData, radius: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   placeholder="100"
                   min="50"
                   max="10000"
                 />
-                <p className="text-white/40 text-xs mt-1">
+                <p className="text-slate-500 text-xs mt-1">
                   Radius default diatur di Settings Admin (GPS Accuracy Radius)
                 </p>
               </div>
@@ -505,7 +541,7 @@ export default function OfficeLocationsPage() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-3 px-6 rounded-xl border border-white/20 transition-all"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-6 rounded-xl transition-all"
                 >
                   Batal
                 </button>
@@ -514,7 +550,8 @@ export default function OfficeLocationsPage() {
           </div>
         </div>
       )}
+      </main>
+      </div>
     </div>
   );
 }
-

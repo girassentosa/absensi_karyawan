@@ -259,6 +259,46 @@ VALUES (
 ) ON CONFLICT DO NOTHING;
 
 -- ============================================
+-- LEAVE REQUESTS TABLE (Pengajuan Izin)
+-- ============================================
+DROP TABLE IF EXISTS leave_requests CASCADE;
+CREATE TABLE leave_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    leave_type VARCHAR(50) NOT NULL, -- 'sick', 'annual', 'personal', 'emergency'
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    days INTEGER NOT NULL, -- Total days of leave
+    reason TEXT NOT NULL,
+    attachment_url TEXT, -- Optional attachment (e.g., medical certificate)
+    status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    admin_notes TEXT, -- Notes from admin when approving/rejecting
+    reviewed_by UUID REFERENCES app_users(id), -- Admin who reviewed the request
+    reviewed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_leave_requests_employee_id ON leave_requests(employee_id);
+CREATE INDEX idx_leave_requests_status ON leave_requests(status);
+CREATE INDEX idx_leave_requests_dates ON leave_requests(start_date, end_date);
+
+CREATE TRIGGER update_leave_requests_updated_at
+    BEFORE UPDATE ON leave_requests
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- COMMENTS FOR LEAVE REQUESTS TABLE
+-- ============================================
+COMMENT ON TABLE leave_requests IS 'Employee leave/absence requests';
+COMMENT ON COLUMN leave_requests.employee_id IS 'FK to employees - ON DELETE CASCADE';
+COMMENT ON COLUMN leave_requests.leave_type IS 'Type of leave: sick, annual, personal, emergency';
+COMMENT ON COLUMN leave_requests.status IS 'Request status: pending, approved, rejected';
+COMMENT ON COLUMN leave_requests.days IS 'Total number of leave days';
+COMMENT ON COLUMN leave_requests.reviewed_by IS 'Admin user who approved/rejected the request';
+
+-- ============================================
 -- SYSTEM SETTINGS TABLE
 -- ============================================
 DROP TABLE IF EXISTS system_settings CASCADE;
@@ -286,11 +326,16 @@ ON CONFLICT (setting_key) DO NOTHING;
 
 -- Enable RLS
 ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leave_requests ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Service role can do everything" ON system_settings
     FOR ALL USING (true) WITH CHECK (true);
 
+CREATE POLICY "Service role can do everything" ON leave_requests
+    FOR ALL USING (true) WITH CHECK (true);
+
 GRANT ALL ON system_settings TO anon, authenticated, service_role;
+GRANT ALL ON leave_requests TO anon, authenticated, service_role;
 
 COMMENT ON TABLE system_settings IS 'System-wide settings for face recognition and GPS verification';
 COMMENT ON COLUMN system_settings.setting_key IS 'Unique identifier for each setting';

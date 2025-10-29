@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 import crypto from 'crypto';
 
-export async function POST(request: NextRequest) {
+async function updateProfileHandler(request: NextRequest) {
   try {
     const body = await request.json();
-    const { currentEmail, newEmail, username, currentPassword, newPassword, avatarUrl } = body;
+    const { currentEmail, newEmail, newUsername, username, currentPassword, newPassword, avatarUrl } = body;
+    
+    // Support both 'username' and 'newUsername' for backward compatibility
+    const usernameToUpdate = newUsername || username;
 
     if (!currentEmail) {
       return NextResponse.json(
@@ -34,12 +37,12 @@ export async function POST(request: NextRequest) {
     };
 
     // Update username if provided and different
-    if (username && username !== user.username) {
+    if (usernameToUpdate && usernameToUpdate !== user.username) {
       // Check if new username is already taken
       const { data: existingUser } = await supabaseServer
         .from('app_users')
         .select('id')
-        .eq('username', username)
+        .eq('username', usernameToUpdate)
         .neq('id', user.id)
         .single();
 
@@ -50,7 +53,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      updateData.username = username;
+      updateData.username = usernameToUpdate;
     }
 
     // Update email if provided and different
@@ -112,7 +115,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Profile updated successfully',
-      updatedUsername: username || user.username,
+      updatedUsername: usernameToUpdate || user.username,
       updatedEmail: newEmail || user.email
     });
   } catch (error: any) {
@@ -122,5 +125,15 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Export handler for POST method (for backward compatibility)
+export async function POST(request: NextRequest) {
+  return updateProfileHandler(request);
+}
+
+// Export handler for PUT method
+export async function PUT(request: NextRequest) {
+  return updateProfileHandler(request);
 }
 

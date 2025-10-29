@@ -8,7 +8,15 @@ export async function GET(request: NextRequest) {
     const email = searchParams.get('email');
     const showInactive = searchParams.get('showInactive') === 'true';
 
-    let query = supabaseServer.from('employees').select('*');
+    // JOIN with app_users to get avatar_url
+    let query = supabaseServer
+      .from('employees')
+      .select(`
+        *,
+        app_users!employees_user_id_fkey (
+          avatar_url
+        )
+      `);
     
     // Only show active employees by default
     if (!showInactive) {
@@ -25,9 +33,16 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    // Flatten the data structure to include avatar_url directly
+    const flattenedData = data?.map((emp: any) => ({
+      ...emp,
+      avatar_url: emp.app_users?.avatar_url || null,
+      app_users: undefined // Remove nested object
+    })) || [];
+
     return NextResponse.json({ 
       success: true, 
-      data: data || []
+      data: flattenedData
     });
   } catch (error: any) {
     return NextResponse.json(

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import FaceTrainingCamera from '@/components/FaceTrainingCamera';
+import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
 
 interface Employee {
   id: string;
@@ -16,17 +16,17 @@ interface Employee {
   is_active: boolean;
   face_encoding_path?: string;
   face_match_score?: number;
+  avatar_url?: string;
 }
 
 export default function EmployeesPage() {
   const router = useRouter();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [trainingEmployee, setTrainingEmployee] = useState<Employee | null>(null);
   const [formData, setFormData] = useState({
     employee_code: '',
     full_name: '',
@@ -43,6 +43,11 @@ export default function EmployeesPage() {
     fetchEmployees();
   }, []);
 
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    router.push('/admin');
+  };
+
   const checkAuth = () => {
     const storedUser = localStorage.getItem('user');
     if (!storedUser) {
@@ -51,14 +56,12 @@ export default function EmployeesPage() {
     }
     const parsedUser = JSON.parse(storedUser);
     if (parsedUser.role !== 'admin') {
-      router.push('/user/attendance');
+      router.push('/user/dashboard');
     }
   };
 
   const fetchEmployees = async () => {
     try {
-      // Fetch ALL employees (both active and inactive) to show in admin panel
-      // Add timestamp to prevent caching
       const timestamp = new Date().getTime();
       const response = await fetch(`/api/employees?showInactive=true&_t=${timestamp}`, {
         cache: 'no-store',
@@ -83,20 +86,17 @@ export default function EmployeesPage() {
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate password
     if (!formData.password || formData.password.length < 6) {
       alert('Password minimal 6 karakter!');
       return;
     }
 
     try {
-      // Validate username
       if (!formData.username || formData.username.trim() === '') {
         alert('Username tidak boleh kosong!');
         return;
       }
 
-      // Create user account first
       const userResponse = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -113,7 +113,6 @@ export default function EmployeesPage() {
       const userData = await userResponse.json();
       
       if (!userData.success) {
-        // Show detailed error if available
         const errorMsg = userData.details || userData.error || 'Gagal membuat akun user';
         alert(errorMsg);
         return;
@@ -121,7 +120,6 @@ export default function EmployeesPage() {
 
       console.log('User created:', userData.user.email);
 
-      // Create employee record (without password)
       const { password, ...employeeData } = formData;
       const response = await fetch('/api/employees', {
         method: 'POST',
@@ -163,7 +161,7 @@ export default function EmployeesPage() {
       full_name: employee.full_name,
       username: employee.username || '',
       email: employee.email,
-      password: '', // Not used in edit mode
+      password: '',
       phone: employee.phone || '',
       department: employee.department || '',
       position: employee.position || '',
@@ -177,7 +175,6 @@ export default function EmployeesPage() {
     if (!editingEmployee) return;
 
     try {
-      // Remove password from update data
       const { password, ...updateData } = formData;
       
       const response = await fetch(`/api/employees/${editingEmployee.id}`, {
@@ -241,43 +238,6 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleTrainFace = (employee: Employee) => {
-    setTrainingEmployee(employee);
-    setShowTrainingModal(true);
-  };
-
-  const handleTrainingComplete = async (faceEncoding: string, matchScore: number) => {
-    if (!trainingEmployee) return;
-
-    // ⚡ TUTUP MODAL & STOP CAMERA DULU (seperti verifikasi!)
-    console.log('✅ Training complete, closing modal...');
-    const employeeToSave = trainingEmployee; // Save reference before clearing state
-    setShowTrainingModal(false);
-    setTrainingEmployee(null);
-
-    try {
-      console.log('💾 Saving training with score:', matchScore);
-      const response = await fetch(`/api/employees/${employeeToSave.id}/face-encoding`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faceEncoding, matchScore }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        // ⚡ NOTIFIKASI MUNCUL SETELAH MODAL TUTUP
-        setTimeout(() => {
-          alert(`✅ Pelatihan wajah berhasil disimpan!\n\nSkor Training: ${matchScore}%\n\nSkor ini akan digunakan sebagai baseline untuk verifikasi wajah.`);
-        }, 200);
-        fetchEmployees();
-      } else {
-        alert(data.error || 'Gagal menyimpan pelatihan wajah');
-      }
-    } catch (error) {
-      console.error('Error saving face training:', error);
-      alert('Gagal menyimpan pelatihan wajah');
-    }
-  };
 
   const handleDeleteEmployee = async (id: string) => {
     const employee = employees.find(emp => emp.id === id);
@@ -288,7 +248,6 @@ export default function EmployeesPage() {
 
     if (!confirm(`🔴 HAPUS PERMANEN - TIDAK BISA DIBATALKAN!\n\nApakah Anda yakin ingin menghapus PERMANEN karyawan ini?\n\nNama: ${employee.full_name}\nEmail: ${employee.email}\n\n⚠️ DATA AKAN DIHAPUS DARI DATABASE!\n⚠️ Semua riwayat absensi akan TERHAPUS!\n⚠️ User account akan TERHAPUS!\n⚠️ TIDAK BISA dikembalikan!\n✅ Email DAPAT digunakan lagi untuk karyawan baru\n\nKetik konfirmasi untuk melanjutkan.`)) return;
 
-    // Double confirmation
     const confirmText = prompt('Ketik "HAPUS" untuk konfirmasi penghapusan permanen:');
     if (confirmText !== 'HAPUS') {
       alert('Penghapusan dibatalkan.');
@@ -321,330 +280,419 @@ export default function EmployeesPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Memuat...</div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Memuat data karyawan...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <header className="bg-white/10 backdrop-blur-lg border-b border-white/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2 sm:gap-4">
-              <button
-                onClick={() => router.push('/admin/dashboard')}
-                className="text-white hover:text-white/80 text-sm sm:text-base"
-              >
-                ← Kembali
-              </button>
-              <h1 className="text-lg sm:text-2xl font-bold text-white">Kelola Karyawan</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <AdminSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
+
+
+      <div className="lg:ml-64 min-h-screen">
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200 shadow-sm">
+        <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-3">
+            {/* Left: Toggle + Title */}
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 truncate">Daftar Karyawan</h2>
+              </div>
             </div>
+
+            {/* Right: Action Buttons */}
+            <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-3 sm:px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg text-sm sm:text-base w-full sm:w-auto"
-            >
-              + Tambah Karyawan
+                className="px-3 sm:px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg text-green-600 hover:text-green-700 text-sm font-semibold transition-all flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline">Tambah</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-3 sm:px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Keluar</span>
             </button>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      {/* Main Content */}
+      <main className="p-3 sm:p-4 md:p-6 lg:p-8">
+        <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+
         {/* Stats Summary */}
-        <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl p-4">
-            <div className="text-white/60 text-sm">Total Karyawan</div>
-            <div className="text-2xl font-bold text-white">{employees.length}</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl p-4">
-            <div className="text-white/60 text-sm">Aktif</div>
-            <div className="text-2xl font-bold text-green-400">{employees.filter(e => e.is_active).length}</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl p-4">
-            <div className="text-white/60 text-sm">Non-Aktif</div>
-            <div className="text-2xl font-bold text-red-400">{employees.filter(e => !e.is_active).length}</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl p-4">
-            <div className="text-white/60 text-sm">Persentase Aktif</div>
-            <div className="text-2xl font-bold text-blue-400">
-              {employees.length > 0 ? Math.round((employees.filter(e => e.is_active).length / employees.length) * 100) : 0}%
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
+          {/* Total Karyawan */}
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 hover:shadow-lg transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-slate-500 font-medium">Total</p>
+                <p className="text-2xl sm:text-3xl font-bold text-slate-900">{employees.length}</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Mobile Card View */}
-        <div className="block lg:hidden space-y-4">
-          {employees.map((employee) => (
-            <div key={employee.id} className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl p-4">
-              <div className="flex items-start justify-between mb-3">
+          {/* Aktif */}
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 hover:shadow-lg transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-slate-500 font-medium">Aktif</p>
+                <p className="text-2xl sm:text-3xl font-bold text-green-600">{employees.filter(e => e.is_active).length}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Non-Aktif */}
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 hover:shadow-lg transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
                 <div className="flex-1">
-                  <h3 className="text-white font-semibold text-lg">{employee.full_name}</h3>
-                  <p className="text-white/60 text-sm">{employee.employee_code}</p>
+                <p className="text-xs text-slate-500 font-medium">Non-Aktif</p>
+                <p className="text-2xl sm:text-3xl font-bold text-red-600">{employees.filter(e => !e.is_active).length}</p>
+              </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs ${
-                  employee.is_active
-                    ? 'bg-green-500/20 text-green-300'
-                    : 'bg-red-500/20 text-red-300'
-                }`}>
-                  {employee.is_active ? 'Aktif' : 'Nonaktif'}
-                </span>
               </div>
               
-              <div className="space-y-2 mb-4">
-                <p className="text-white/80 text-sm">
-                  <span className="text-white/60">Email:</span> {employee.email}
-                </p>
-                <p className="text-white/80 text-sm">
-                  <span className="text-white/60">Departemen:</span> {employee.department || '-'}
-                </p>
-                <p className="text-white/80 text-sm">
-                  <span className="text-white/60">Jabatan:</span> {employee.position || '-'}
-                </p>
-                <p className="text-white/80 text-sm">
-                  <span className="text-white/60">Training Score:</span>{' '}
-                  {employee.face_match_score ? (
-                    <span className="font-semibold text-green-400">{employee.face_match_score}%</span>
-                  ) : (
-                    <span className="text-yellow-400">Belum dilatih</span>
-                  )}
-                </p>
+          {/* Persentase Aktif */}
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 hover:shadow-lg transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
               </div>
-
-              <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleEditEmployee(employee)}
-                        className="flex-1 p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-all text-sm font-medium"
-                        title="Edit Karyawan"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleTrainFace(employee)}
-                        className="flex-1 p-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-all text-sm font-medium"
-                        title="Latih Wajah"
-                      >
-                        {employee.face_encoding_path ? 'Update Wajah' : 'Latih Wajah'}
-                      </button>
-                <button
-                  onClick={() => handleToggleStatus(employee.id, employee.is_active)}
-                  className={`flex-1 p-2 rounded-lg transition-all text-sm font-medium ${
-                    employee.is_active
-                      ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                      : 'bg-green-500 hover:bg-green-600 text-white'
-                  }`}
-                  title={employee.is_active ? 'Nonaktifkan Karyawan' : 'Aktifkan Karyawan'}
-                >
-                  {employee.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                </button>
-                <button
-                  onClick={() => handleDeleteEmployee(employee.id)}
-                  className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all"
-                  title="Hapus Permanen (Hard Delete)"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+              <div className="flex-1">
+                <p className="text-xs text-slate-500 font-medium">% Aktif</p>
+                <p className="text-2xl sm:text-3xl font-bold text-indigo-600">
+                  {employees.length > 0 ? Math.round((employees.filter(e => e.is_active).length / employees.length) * 100) : 0}%
+                </p>
               </div>
             </div>
-          ))}
-        </div>
-
-        {/* Desktop Table View */}
-        <div className="hidden lg:block bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px]">
-              <thead className="bg-white/5">
-                <tr>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Kode</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Nama</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Email</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Departemen</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Jabatan</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Training Score</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Status</th>
-                  <th className="text-left px-4 xl:px-6 py-4 text-white font-semibold text-sm xl:text-base">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((employee) => (
-                  <tr key={employee.id} className="border-t border-white/10 hover:bg-white/5">
-                    <td className="px-4 xl:px-6 py-4 text-white/80 text-sm xl:text-base">{employee.employee_code}</td>
-                    <td className="px-4 xl:px-6 py-4 text-white text-sm xl:text-base">{employee.full_name}</td>
-                    <td className="px-4 xl:px-6 py-4 text-white/80 text-sm xl:text-base">{employee.email}</td>
-                    <td className="px-4 xl:px-6 py-4 text-white/80 text-sm xl:text-base">{employee.department || '-'}</td>
-                    <td className="px-4 xl:px-6 py-4 text-white/80 text-sm xl:text-base">{employee.position || '-'}</td>
-                    <td className="px-4 xl:px-6 py-4 text-sm xl:text-base">
-                      {employee.face_match_score ? (
-                        <span className="font-semibold text-green-400">{employee.face_match_score}%</span>
-                      ) : (
-                        <span className="text-yellow-400">Belum dilatih</span>
-                      )}
-                    </td>
-                    <td className="px-4 xl:px-6 py-4">
-                      <span className={`px-2 xl:px-3 py-1 rounded-full text-xs xl:text-sm ${
-                        employee.is_active
-                          ? 'bg-green-500/20 text-green-300'
-                          : 'bg-red-500/20 text-red-300'
-                      }`}>
-                        {employee.is_active ? 'Aktif' : 'Nonaktif'}
-                      </span>
-                    </td>
-                    <td className="px-4 xl:px-6 py-4">
-                      <div className="flex items-center gap-1 xl:gap-2">
-                        <button
-                          onClick={() => handleEditEmployee(employee)}
-                          className="p-1.5 xl:p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-all hover:scale-105"
-                          title="Edit Karyawan"
-                        >
-                          <svg className="w-3 xl:w-4 h-3 xl:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleTrainFace(employee)}
-                          className="p-1.5 xl:p-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-all hover:scale-105"
-                          title={employee.face_encoding_path ? 'Update Wajah' : 'Latih Wajah'}
-                        >
-                          <svg className="w-3 xl:w-4 h-3 xl:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleToggleStatus(employee.id, employee.is_active)}
-                          className={`p-1.5 xl:p-2 rounded-lg transition-all hover:scale-105 ${
-                            employee.is_active
-                              ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                              : 'bg-green-500 hover:bg-green-600 text-white'
-                          }`}
-                          title={employee.is_active ? 'Nonaktifkan Karyawan' : 'Aktifkan Karyawan'}
-                        >
-                          {employee.is_active ? (
-                            <svg className="w-3 xl:w-4 h-3 xl:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636" />
-                            </svg>
-                          ) : (
-                            <svg className="w-3 xl:w-4 h-3 xl:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEmployee(employee.id)}
-                          className="p-1.5 xl:p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all hover:scale-105"
-                          title="Hapus Permanen (Hard Delete)"
-                        >
-                          <svg className="w-3 xl:w-4 h-3 xl:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
+              </div>
+
+        {/* Employee List - Grid Layout */}
+        {employees.length === 0 ? (
+          <div className="bg-white rounded-xl sm:rounded-2xl p-8 sm:p-12 text-center shadow-sm border border-slate-200">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 sm:w-12 sm:h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-2">Belum Ada Karyawan</h3>
+            <p className="text-sm sm:text-base text-slate-500 mb-4 sm:mb-6">Mulai dengan menambahkan karyawan pertama</p>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-all inline-flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Tambah Karyawan Pertama</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+            {employees.map((employee) => (
+              <div key={employee.id} className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-slate-200 hover:shadow-lg hover:border-blue-200 transition-all overflow-hidden group">
+                {/* Card Header dengan Gradient - Compact */}
+                <div className="bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 p-3 sm:p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                      {employee.avatar_url ? (
+                        <img 
+                          src={employee.avatar_url} 
+                          alt={employee.full_name}
+                          className="w-12 h-12 sm:w-13 sm:h-13 rounded-lg object-cover border-2 border-white/30 shadow-lg flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-lg bg-white/20 backdrop-blur-sm border-2 border-white/30 flex items-center justify-center text-white font-bold text-base sm:text-lg shadow-lg flex-shrink-0">
+                          {employee.full_name.substring(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm sm:text-base font-bold text-white truncate">{employee.full_name}</h3>
+                        <p className="text-xs text-white/80 truncate">{employee.employee_code}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Status Badge - Compact */}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold shadow-sm flex-shrink-0 ${
+                      employee.is_active
+                        ? 'bg-green-500 text-white'
+                        : 'bg-red-500 text-white'
+                    }`}>
+                      <span className="text-xs">{employee.is_active ? '●' : '○'}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card Body - Compact */}
+                <div className="p-3 sm:p-4 space-y-2.5">
+                  {/* Training Status - Compact */}
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <span className="text-xs text-slate-500 font-medium">Training</span>
+                    {employee.face_match_score ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-md text-xs font-semibold">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>{employee.face_match_score}%</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-md text-xs font-semibold">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span>Belum</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Details - Compact & Consistent */}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-slate-50 rounded-md p-2 border border-slate-100">
+                        <p className="text-xs text-slate-500 font-medium mb-0.5">Departemen</p>
+                        <p className="text-xs text-slate-900 truncate font-medium">{employee.department || '-'}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-md p-2 border border-slate-100">
+                        <p className="text-xs text-slate-500 font-medium mb-0.5">Jabatan</p>
+                        <p className="text-xs text-slate-900 truncate font-medium">{employee.position || '-'}</p>
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 rounded-md p-2 border border-slate-100">
+                      <p className="text-xs text-slate-500 font-medium mb-0.5">Email</p>
+                      <p className="text-xs text-slate-900 truncate font-medium">{employee.email}</p>
+                    </div>
+                  </div>
+
+                    {/* Action Buttons - Compact (3 buttons: Edit, Status, Delete) */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    <button
+                      onClick={() => handleEditEmployee(employee)}
+                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md text-blue-600 hover:text-blue-700 text-xs font-semibold transition-all flex items-center justify-center gap-1"
+                      title="Edit Karyawan"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <span>Edit</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleToggleStatus(employee.id, employee.is_active)}
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1 border ${
+                        employee.is_active
+                          ? 'bg-yellow-50 hover:bg-yellow-100 border-yellow-200 text-yellow-600 hover:text-yellow-700'
+                          : 'bg-green-50 hover:bg-green-100 border-green-200 text-green-600 hover:text-green-700'
+                      }`}
+                      title={employee.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                    >
+                      {employee.is_active ? (
+                        <>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                          </svg>
+                          <span>Off</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>On</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteEmployee(employee.id)}
+                      className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md text-red-600 hover:text-red-700 text-xs font-semibold transition-all flex items-center justify-center gap-1"
+                      title="Hapus Permanen"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      <span>Hapus</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         </div>
       </main>
 
       {/* Add Employee Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-2xl p-4 sm:p-6 lg:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-white mb-6">Tambah Karyawan</h2>
-            <form onSubmit={handleAddEmployee} className="space-y-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-3 sm:p-4" onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-sm sm:max-w-md lg:max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+                <span className="truncate">Tambah Karyawan</span>
+              </h2>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 sm:p-2 rounded-lg transition-all flex-shrink-0"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleAddEmployee} className="space-y-3 sm:space-y-4">
+              {/* Grid 2 columns untuk desktop */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label className="block text-white/80 mb-2">Kode Karyawan</label>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Kode Karyawan <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={formData.employee_code}
                   onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   required
+                    placeholder="EMP001"
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Nama Lengkap</label>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Nama Lengkap <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={formData.full_name}
                   onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    required
+                    placeholder="Masukkan nama lengkap"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Username <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="Username untuk login"
                   required
                 />
+                  <p className="text-slate-500 text-xs mt-1">Username unik untuk login</p>
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Username <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
-                  placeholder="Username untuk login"
-                  required
-                />
-                <p className="text-white/60 text-xs mt-1">Username unik untuk login</p>
-              </div>
-              <div>
-                <label className="block text-white/80 mb-2">Email</label>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Email <span className="text-red-500">*</span></label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all break-all"
+                    required
+                    placeholder="email@example.com"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Password <span className="text-red-500">*</span></label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="Minimal 6 karakter"
                   required
+                    minLength={6}
+                  />
+                  <p className="text-slate-500 text-xs mt-1">Password untuk login karyawan</p>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Telepon</label>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="08123456789"
                 />
               </div>
-              <div>
-                <label className="block text-white/80 mb-2">Password</label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
-                  placeholder="Minimal 6 karakter"
-                  required
-                  minLength={6}
-                />
-                <p className="text-white/60 text-xs mt-1">Password akan digunakan karyawan untuk login</p>
               </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label className="block text-white/80 mb-2">Telepon</label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-white/80 mb-2">Departemen</label>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Departemen</label>
                 <input
                   type="text"
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="IT, HR, Finance, dll"
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Jabatan</label>
+                  <label className="block text-slate-700 font-semibold mb-1.5 sm:mb-2 text-xs sm:text-sm">Jabatan</label>
                 <input
                   type="text"
                   value={formData.position}
                   onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder="Manager, Staff, dll"
                 />
               </div>
-              <div className="flex gap-4 pt-4">
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-3 sm:pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg"
+                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg sm:rounded-xl shadow-lg hover:shadow-xl transition-all text-sm sm:text-base"
                 >
-                  Tambah
+                  Tambah Karyawan
                 </button>
                 <button
                   type="button"
@@ -661,7 +709,7 @@ export default function EmployeesPage() {
                       position: '',
                     });
                   }}
-                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-3 px-6 rounded-lg"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg sm:rounded-xl transition-all text-sm sm:text-base"
                 >
                   Batal
                 </button>
@@ -673,71 +721,93 @@ export default function EmployeesPage() {
 
       {/* Edit Employee Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-2xl p-4 sm:p-6 lg:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-white mb-6">Edit Karyawan</h2>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-3 sm:p-4" onClick={() => setShowEditModal(false)}>
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 w-full max-w-sm sm:max-w-md lg:max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                <span className="truncate">Edit Karyawan</span>
+              </h2>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 sm:p-2 rounded-lg transition-all flex-shrink-0"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
             <form onSubmit={handleUpdateEmployee} className="space-y-4">
               <div>
-                <label className="block text-white/80 mb-2">Kode Karyawan</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Kode Karyawan</label>
                 <input
                   type="text"
                   value={formData.employee_code}
                   onChange={(e) => setFormData({ ...formData, employee_code: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   required
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Nama Lengkap</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Nama Lengkap</label>
                 <input
                   type="text"
                   value={formData.full_name}
                   onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   required
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Email</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Email</label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                   required
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Telepon</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Telepon</label>
                 <input
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Departemen</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Departemen</label>
                 <input
                   type="text"
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                 />
               </div>
+
               <div>
-                <label className="block text-white/80 mb-2">Jabatan</label>
+                <label className="block text-slate-700 font-semibold mb-2 text-sm">Jabatan</label>
                 <input
                   type="text"
                   value={formData.position}
                   onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                  className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
                 />
               </div>
-              <div className="flex gap-4 pt-4">
+
+              <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all"
                 >
                   Update
                 </button>
@@ -757,7 +827,7 @@ export default function EmployeesPage() {
                       position: '',
                     });
                   }}
-                  className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-3 px-6 rounded-lg"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-6 rounded-xl transition-all"
                 >
                   Batal
                 </button>
@@ -767,17 +837,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Face Training Modal */}
-      {showTrainingModal && trainingEmployee && (
-        <FaceTrainingCamera
-          onComplete={handleTrainingComplete}
-          onClose={() => {
-            setShowTrainingModal(false);
-            setTrainingEmployee(null);
-          }}
-        />
-      )}
+      </div>
     </div>
   );
 }
-
