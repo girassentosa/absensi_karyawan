@@ -10,6 +10,7 @@ interface VerificationResultModalProps {
   threshold?: number;
   onClose: () => void;
   onContinue?: () => void;
+  onRetry?: () => void; // ← Tambah callback untuk retry
   actionText?: string; // Custom button text
 }
 
@@ -21,6 +22,7 @@ export default function VerificationResultModal({
   threshold,
   onClose,
   onContinue,
+  onRetry, // ← Terima prop onRetry
   actionText = 'Lanjutkan Check-in'
 }: VerificationResultModalProps) {
   const [show, setShow] = useState(false);
@@ -234,7 +236,15 @@ export default function VerificationResultModal({
                   Tutup
                 </button>
                 <button
-                  onClick={() => window.location.reload()}
+                  onClick={() => {
+                    handleClose();
+                    // Panggil onRetry jika ada, kalau tidak fallback ke reload
+                    if (onRetry) {
+                      onRetry();
+                    } else {
+                      window.location.reload();
+                    }
+                  }}
                   className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 sm:py-3.5 md:py-4 px-4 sm:px-5 md:px-6 rounded-lg sm:rounded-xl shadow-lg hover:shadow-xl active:scale-95 sm:hover:scale-105 transition-all duration-200 text-sm sm:text-base"
                 >
                   Coba Lagi

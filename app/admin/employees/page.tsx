@@ -249,9 +249,15 @@ export default function EmployeesPage() {
   const handleTrainingComplete = async (faceEncoding: string, matchScore: number) => {
     if (!trainingEmployee) return;
 
+    // ⚡ TUTUP MODAL & STOP CAMERA DULU (seperti verifikasi!)
+    console.log('✅ Training complete, closing modal...');
+    const employeeToSave = trainingEmployee; // Save reference before clearing state
+    setShowTrainingModal(false);
+    setTrainingEmployee(null);
+
     try {
       console.log('💾 Saving training with score:', matchScore);
-      const response = await fetch(`/api/employees/${trainingEmployee.id}/face-encoding`, {
+      const response = await fetch(`/api/employees/${employeeToSave.id}/face-encoding`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ faceEncoding, matchScore }),
@@ -259,9 +265,10 @@ export default function EmployeesPage() {
 
       const data = await response.json();
       if (data.success) {
-        alert(`✅ Pelatihan wajah berhasil disimpan!\n\nSkor Training: ${matchScore}%\n\nSkor ini akan digunakan sebagai baseline untuk verifikasi wajah.`);
-        setShowTrainingModal(false);
-        setTrainingEmployee(null);
+        // ⚡ NOTIFIKASI MUNCUL SETELAH MODAL TUTUP
+        setTimeout(() => {
+          alert(`✅ Pelatihan wajah berhasil disimpan!\n\nSkor Training: ${matchScore}%\n\nSkor ini akan digunakan sebagai baseline untuk verifikasi wajah.`);
+        }, 200);
         fetchEmployees();
       } else {
         alert(data.error || 'Gagal menyimpan pelatihan wajah');

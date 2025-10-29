@@ -154,12 +154,18 @@ export async function performRealTimeTraining(
   let isAnalyzing = true;
   let bestDescriptor: Float32Array | null = null;
   let bestConfidence = 0;
-  let stableFrames = 0;
-  const requiredStableFrames = 15; // Need 15 stable frames for reliable training
-  const targetConfidence = 85; // Minimum 85% confidence from face detection
+  
+  // ⚡ NEW SIMPLE APPROACH: Cari 5 frame yang PASTI >= 85%!
+  const goodFrames: { descriptor: Float32Array; confidence: number }[] = [];
+  const requiredGoodFrames = 5;
+  const targetConfidence = 85;
+  const maxStdDeviation = 5; // Max 5% variation for consistency
+  let currentFrameIndex = 0;
 
-  console.log(`🎯 Starting REAL face training for: ${stepInstruction}`);
-  console.log(`📋 Requirements: ${requiredStableFrames} stable frames at ${targetConfidence}% confidence`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`🎯 Starting training: ${stepInstruction}`);
+  console.log(`📋 Need ${requiredGoodFrames} frames with >= ${targetConfidence}% confidence`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
   // Ensure models are loaded before starting
   const modelsReady = await loadFaceModels();
@@ -169,7 +175,7 @@ export async function performRealTimeTraining(
   }
 
   const analyzeFrame = async () => {
-    if (!isAnalyzing) return;
+    if (!isAnalyzing) return; // ⚡ STOP if already completed!
 
     try {
       // REAL face detection
@@ -181,102 +187,183 @@ export async function performRealTimeTraining(
         return;
       }
 
-      // Update progress with REAL confidence
+      // Update progress with REAL confidence (only if still analyzing!)
+      if (isAnalyzing) {
     onProgress(result.confidence);
+      }
 
       if (result.detected && result.descriptor) {
-        // Track best detection
-        if (result.confidence > bestConfidence) {
-          bestConfidence = result.confidence;
-          bestDescriptor = result.descriptor;
-        }
-
-        // Check if we have stable high-quality detection
-    if (result.confidence >= targetConfidence) {
-      stableFrames++;
-      console.log(`✅ Stable frame ${stableFrames}/${requiredStableFrames} - Confidence: ${result.confidence}%`);
-      
-      if (stableFrames >= requiredStableFrames) {
-        isAnalyzing = false;
-            
-            if (bestDescriptor) {
-              // Serialize descriptor for storage
-              const encoding = serializeDescriptor(bestDescriptor);
-              console.log(`🎉 Training completed! Confidence: ${bestConfidence}%`);
-              console.log(`📊 Descriptor size: ${bestDescriptor.length} dimensions`);
-              onComplete(encoding, bestConfidence);
-            } else {
-              onError('Gagal mendapatkan data wajah');
-            }
-        return;
-      }
-    } else {
-          // Reset if confidence drops below threshold
-          if (stableFrames > 0) {
-            console.log(`⚠️ Confidence dropped to ${result.confidence}%, resetting stable frames`);
+        // ⚡ Check if this frame is GOOD (>= 85%)
+        if (result.confidence >= targetConfidence) {
+          // ✅ DAPAT FRAME BAGUS!
+          console.log(`✅ FRAME ${currentFrameIndex + 1}/${requiredGoodFrames} CAPTURED! Confidence: ${result.confidence}%`);
+          
+          // Save this good frame
+          goodFrames.push({
+            descriptor: result.descriptor,
+            confidence: result.confidence
+          });
+          
+          // Track best
+          if (result.confidence > bestConfidence) {
+            bestConfidence = result.confidence;
+            bestDescriptor = result.descriptor;
           }
-          stableFrames = 0;
+          
+          currentFrameIndex++;
+          
+          // ⚡ Check if we have all 5 frames
+          if (goodFrames.length >= requiredGoodFrames) {
+            // ✅ SEMUA FRAME SUDAH DAPAT!
+            isAnalyzing = false;
+            
+            // Calculate statistics
+            const confidences = goodFrames.map(f => f.confidence);
+            const avg = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+            const variance = confidences.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / confidences.length;
+            const stdDev = Math.sqrt(variance);
+            
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            console.log(`🎉 ALL ${requiredGoodFrames} FRAMES CAPTURED!`);
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            console.log(`📊 Frames: [${confidences.join(', ')}]`);
+            console.log(`📊 Average: ${avg.toFixed(1)}%`);
+            console.log(`📊 Best: ${bestConfidence}%`);
+            console.log(`📊 StdDev: ${stdDev.toFixed(2)}% (max allowed: ${maxStdDeviation}%)`);
+            
+            // ⚡ VALIDATE CONSISTENCY
+            if (stdDev <= maxStdDeviation) {
+              console.log(`✅ CONSISTENCY CHECK PASSED! (${stdDev.toFixed(2)}% ≤ ${maxStdDeviation}%)`);
+              console.log(`🎯 Using BEST frame: ${bestConfidence}%`);
+              console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+              
+              const encoding = serializeDescriptor(bestDescriptor!);
+              onComplete(encoding, bestConfidence);
+              return;
+            } else {
+              // ❌ CONSISTENCY FAILED!
+              console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+              console.warn(`⚠️ CONSISTENCY CHECK FAILED!`);
+              console.warn(`⚠️ StdDev: ${stdDev.toFixed(2)}% > ${maxStdDeviation}%`);
+              console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+              
+              onError(
+                `Kualitas tidak konsisten! 😔\n\n` +
+                `Variasi confidence: ${stdDev.toFixed(1)}% (max: ${maxStdDeviation}%)\n` +
+                `Frames: [${confidences.join(', ')}]\n\n` +
+                `Kemungkinan penyebab:\n` +
+                `• Cahaya tidak stabil (berkedip, bayangan)\n` +
+                `• Wajah bergerak terlalu banyak\n` +
+                `• Kamera shake atau tidak fokus\n` +
+                `• Attempt spoofing (foto/video)\n\n` +
+                `💡 Tips:\n` +
+                `• Gunakan cahaya yang stabil\n` +
+                `• Jangan bergerak saat training\n` +
+                `• Pastikan kamera fokus & stabil\n` +
+                `• Jarak tetap (30-50 cm)`
+              );
+              return;
+            }
+          }
+          
+          // ⏸️ Pause sebentar sebelum cari frame berikutnya
+          console.log(`⏸️ Pausing 500ms before next frame...`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+          console.log(`🎯 FRAME ${currentFrameIndex + 1}/${requiredGoodFrames}: ${stepInstruction}`);
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        } else {
+          // ⚠️ Frame belum cukup bagus, terus cari!
+          console.log(`🔄 Loading... ${result.confidence}% (need >= ${targetConfidence}%)`);
         }
       } else {
-        // No face detected, reset counter
-        if (stableFrames > 0) {
-          console.log('⚠️ Face lost, resetting stable frames');
-        }
-        stableFrames = 0;
-    }
+        // No face detected
+        console.log(`👤 No face detected, keep looking...`);
+      }
 
-    // Continue analyzing
+    // Continue analyzing ONLY if still active
+    if (isAnalyzing) {
     requestAnimationFrame(analyzeFrame);
+    }
     } catch (error: any) {
-      console.error('❌ Frame analysis error:', error);
+      // ⚠️ Use console.warn for user-facing errors
+      console.warn('⚠️ Frame analysis error:', error);
       isAnalyzing = false;
       onError(`Error: ${error.message}`);
     }
   };
 
   // Start analysis
+  // ⚡ Start dengan log untuk FRAME 1
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`🎯 FRAME 1/${requiredGoodFrames}: ${stepInstruction}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  
   analyzeFrame();
 
-  // Timeout after 45 seconds
+  // ⚡ Timeout after 120 seconds (no time limit per frame, but overall safety)
   setTimeout(() => {
     if (isAnalyzing) {
       isAnalyzing = false;
+      console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.warn(`⏰ Training timeout after 120 seconds`);
+      console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      
       if (bestDescriptor && bestConfidence >= 70) {
-        console.log(`⏰ Training timeout, using best result: ${bestConfidence}%`);
+        console.log(`✅ Using best result: ${bestConfidence}%`);
         const encoding = serializeDescriptor(bestDescriptor);
         onComplete(encoding, bestConfidence);
       } else {
-        onError(
-          `Training timeout!\n\n` +
-          `Confidence terbaik: ${bestConfidence}%\n` +
-          `Minimum required: 70%\n\n` +
-          `Tips:\n` +
-          `- Pastikan wajah terlihat jelas\n` +
-          `- Cukup cahaya\n` +
-          `- Ikuti instruksi dengan tepat`
-        );
+        // ⚠️ User-friendly error message
+        if (bestConfidence === 0) {
+          // No face detected at all
+          onError(
+            `Wajah tidak terdeteksi! 😔\n\n` +
+            `Kemungkinan penyebab:\n` +
+            `• Cahaya terlalu gelap atau terlalu terang\n` +
+            `• Wajah terlalu jauh dari kamera\n` +
+            `• Kamera tertutup atau tidak fokus\n` +
+            `• Posisi wajah tidak menghadap kamera\n\n` +
+            `💡 Tips:\n` +
+            `• Gunakan cahaya yang cukup\n` +
+            `• Jarak ideal: 30-50 cm dari kamera\n` +
+            `• Pastikan wajah terlihat jelas di kotak putih`
+          );
+      } else {
+          // Low confidence (1-69%)
+          onError(
+            `Kualitas deteksi wajah kurang baik 😔\n\n` +
+            `Confidence: ${bestConfidence}% (minimum: 70%)\n\n` +
+            `💡 Tips untuk meningkatkan kualitas:\n` +
+            `• Tambahkan pencahayaan di wajah\n` +
+            `• Bersihkan lensa kamera\n` +
+            `• Dekatkan wajah ke kamera (30-50 cm)\n` +
+            `• Lepas kacamata atau masker (jika ada)\n` +
+            `• Pastikan wajah tepat di tengah kotak putih\n` +
+            `• Hindari gerakan saat training`
+          );
+        }
       }
     }
-  }, 45000);
+  }, 120000); // ⚡ 120 seconds (2 minutes) karena tidak ada batas per frame
 }
 
 /**
- * REAL face verification using face-api.js
- * Compares live face with stored 128D face descriptor
+ * ⚡ ADAPTIVE face verification (OPTION 3!)
+ * - Adjust strictness based on training score
+ * - Collect multiple frames for consistency
+ * - Validate against training baseline
  */
-export async function performRealTimeVerification(
+export async function performInstantVerification(
   video: HTMLVideoElement,
   storedEncoding: string,
-  onProgress: (confidence: number, similarity: number) => void,
-  onComplete: (success: boolean, finalConfidence: number, similarity: number) => void
+  onProgress: (status: string, confidence: number) => void,
+  onComplete: (success: boolean, similarity: number, confidence: number) => void,
+  trainingScore?: number // ← NEW: Training score from DB
 ): Promise<void> {
-  let isAnalyzing = true;
-  let bestSimilarity = 0;
-  let bestConfidence = 0;
-  let stableFrames = 0;
-  const requiredStableFrames = 10; // Need 10 stable frames for verification
-  
-  console.log(`🎯 Starting REAL face verification`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`⚡ Starting ADAPTIVE face verification (OPTION 3)`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
   // Load models
   const modelsReady = await loadFaceModels();
@@ -309,66 +396,224 @@ export async function performRealTimeVerification(
     console.log('⚠️ Using default threshold: 80%');
   }
 
+  // ⚡ ADAPTIVE PARAMETERS based on training score
+  let requiredFrames = 3;
+  let minConfidence = 85;
+  let maxStdDev = 5;
+  let maxGapFromTraining = 15;
+  let mode = 'NORMAL';
+
+  if (trainingScore && trainingScore >= 90) {
+    // STRICT MODE for high-quality training
+    requiredFrames = 5;
+    minConfidence = 85;
+    maxStdDev = 3;
+    maxGapFromTraining = 10;
+    mode = 'STRICT';
+  }
+
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`🔒 MODE: ${mode}`);
+  console.log(`📊 Training score: ${trainingScore || 'N/A'}%`);
+  console.log(`📋 Required frames: ${requiredFrames}`);
+  console.log(`📏 Min confidence: ${minConfidence}%`);
+  console.log(`📐 Max StdDev: ${maxStdDev}%`);
+  console.log(`📏 Max gap from training: ${maxGapFromTraining}%`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+  // Collect good frames
+  const goodFrames: { similarity: number; confidence: number; descriptor: Float32Array }[] = [];
+  let isAnalyzing = true;
+  let currentFrameIndex = 0;
+  let bestSimilarity = 0;
+  let bestConfidence = 0;
+
   const analyzeFrame = async () => {
     if (!isAnalyzing) return;
 
     try {
+      onProgress(`🔍 Frame ${currentFrameIndex + 1}/${requiredFrames}...`, 0);
+
       // REAL face detection
       const result = await analyzeVideoFrame(video);
     
       if (result.detected && result.descriptor) {
-        // REAL face comparison using euclidean distance
+        // REAL face comparison
         const similarity = compareFaceDescriptors(storedDescriptor, result.descriptor);
-      
-        // Track best match
-      if (similarity > bestSimilarity) {
-        bestSimilarity = similarity;
-          bestConfidence = result.confidence;
-      }
 
-        // Always update progress (UI feedback)
-      onProgress(result.confidence, similarity);
+        // Check if this is a good frame
+        if (result.confidence >= minConfidence && similarity >= threshold - 10) {
+          // ✅ GOOD FRAME!
+          console.log(`✅ FRAME ${currentFrameIndex + 1}/${requiredFrames} CAPTURED! Confidence: ${result.confidence}%, Similarity: ${similarity}%`);
+          
+          goodFrames.push({
+            similarity,
+            confidence: result.confidence,
+            descriptor: result.descriptor
+          });
 
-        // Check if verification passes threshold
-      if (similarity >= threshold) {
-        stableFrames++;
-        
-        if (stableFrames >= requiredStableFrames) {
-          isAnalyzing = false;
-            console.log(`🎉 VERIFICATION SUCCESS! Similarity: ${bestSimilarity}% (threshold: ${threshold}%)`);
-            onComplete(true, bestConfidence, bestSimilarity);
-          return;
+          // Track best
+          if (similarity > bestSimilarity) {
+            bestSimilarity = similarity;
+            bestConfidence = result.confidence;
+          }
+
+          currentFrameIndex++;
+
+          // ⚡ Check if we have all frames
+          if (goodFrames.length >= requiredFrames) {
+            // ✅ ALL FRAMES COLLECTED!
+            isAnalyzing = false;
+
+            // Calculate statistics
+            const similarities = goodFrames.map(f => f.similarity);
+            const confidences = goodFrames.map(f => f.confidence);
+            const avgSimilarity = similarities.reduce((a, b) => a + b, 0) / similarities.length;
+            const avgConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+            
+            // Calculate StdDev for similarity
+            const variance = similarities.reduce((sum, val) => sum + Math.pow(val - avgSimilarity, 2), 0) / similarities.length;
+            const stdDev = Math.sqrt(variance);
+
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            console.log(`🎉 ALL ${requiredFrames} FRAMES CAPTURED!`);
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            console.log(`📊 Similarities: [${similarities.join(', ')}]`);
+            console.log(`📊 Average similarity: ${avgSimilarity.toFixed(1)}%`);
+            console.log(`📊 Best similarity: ${bestSimilarity}%`);
+            console.log(`📊 StdDev: ${stdDev.toFixed(2)}%`);
+
+            // ⚡ VALIDATION CHECKS
+            let passed = true;
+            let failReason = '';
+
+            // CHECK #1: Consistency
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            console.log(`📊 CHECK #1: Consistency`);
+            if (stdDev <= maxStdDev) {
+              console.log(`✅ PASS! StdDev ${stdDev.toFixed(2)}% <= ${maxStdDev}%`);
+            } else {
+              console.warn(`❌ FAIL! StdDev ${stdDev.toFixed(2)}% > ${maxStdDev}%`);
+              passed = false;
+              failReason = 'Inconsistent similarity - possible spoofing';
+            }
+
+            // CHECK #2: Threshold
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            console.log(`📊 CHECK #2: Threshold`);
+            if (avgSimilarity >= threshold) {
+              console.log(`✅ PASS! Average ${avgSimilarity.toFixed(1)}% >= ${threshold}%`);
+            } else {
+              console.warn(`❌ FAIL! Average ${avgSimilarity.toFixed(1)}% < ${threshold}%`);
+              passed = false;
+              failReason = 'Similarity below threshold';
+            }
+
+            // CHECK #3: Training Score Gap (if available)
+            if (trainingScore && passed) {
+              console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+              console.log(`📊 CHECK #3: Training Score Gap`);
+              const gap = Math.abs(avgConfidence - trainingScore);
+              console.log(`Training score: ${trainingScore}%`);
+              console.log(`Current avg confidence: ${avgConfidence.toFixed(1)}%`);
+              console.log(`Gap: ${gap.toFixed(1)}%`);
+              
+              if (gap <= maxGapFromTraining) {
+                console.log(`✅ PASS! Gap ${gap.toFixed(1)}% <= ${maxGapFromTraining}%`);
+              } else {
+                console.warn(`⚠️ WARNING! Gap ${gap.toFixed(1)}% > ${maxGapFromTraining}%`);
+                // Don't fail, just warn (gap check is supplementary)
+              }
+            }
+
+            console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+            if (passed) {
+              console.log(`✅ ALL CHECKS PASSED!`);
+              console.log(`🎯 Best similarity: ${bestSimilarity}%`);
+              console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+              onComplete(true, bestSimilarity, bestConfidence);
+            } else {
+              console.warn(`❌ VERIFICATION FAILED!`);
+              console.warn(`Reason: ${failReason}`);
+              console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+              onComplete(false, avgSimilarity, avgConfidence);
+            }
+            return;
+          }
+
+          // ⏸️ Pause before next frame
+          console.log(`⏸️ Pausing 300ms before next frame...`);
+          await new Promise(resolve => setTimeout(resolve, 300));
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+          console.log(`🎯 FRAME ${currentFrameIndex + 1}/${requiredFrames}`);
+          console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        } else {
+          // Frame not good enough
+          console.log(`🔄 Loading... Confidence: ${result.confidence}%, Similarity: ${similarity}%`);
+          onProgress(`🔄 Analyzing... ${result.confidence}%`, result.confidence);
         }
       } else {
-          // Reset if similarity drops below threshold
-          stableFrames = 0;
+        // No face detected
+        console.log(`👤 No face detected...`);
+        onProgress('👤 Arahkan wajah ke kotak...', 0);
       }
-      } else {
-        // No face detected - reset but don't spam console
-        stableFrames = 0;
-        onProgress(0, 0);
-    }
 
-      // Continue analyzing next frame
-    requestAnimationFrame(analyzeFrame);
+      // Continue loop
+      if (isAnalyzing) {
+        requestAnimationFrame(analyzeFrame);
+      }
     } catch (error: any) {
-      console.error('❌ Verification frame error:', error);
+      console.error('❌ Verification error:', error);
       isAnalyzing = false;
       onComplete(false, 0, 0);
     }
   };
 
-  // Start analysis
+  // Start with first frame header
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`🎯 FRAME 1/${requiredFrames}`);
+  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   analyzeFrame();
 
-  // Timeout after 20 seconds
+  // Timeout safety
   setTimeout(() => {
     if (isAnalyzing) {
       isAnalyzing = false;
-      console.log(`⏰ Verification timeout - Best similarity: ${bestSimilarity}%`);
-      onComplete(bestSimilarity >= threshold, bestConfidence, bestSimilarity);
+      console.warn(`⏰ Verification timeout!`);
+      if (bestSimilarity > 0) {
+        console.log(`✅ Using best result: ${bestSimilarity}%`);
+        onComplete(bestSimilarity >= threshold, bestSimilarity, bestConfidence);
+      } else {
+        onComplete(false, 0, 0);
+      }
     }
-  }, 20000);
+  }, 10000); // 10 seconds max
+}
+
+/**
+ * REAL face verification using face-api.js (OLD - for backward compatibility)
+ * Compares live face with stored 128D face descriptor
+ */
+export async function performRealTimeVerification(
+  video: HTMLVideoElement,
+  storedEncoding: string,
+  onProgress: (confidence: number, similarity: number) => void,
+  onComplete: (success: boolean, finalConfidence: number, similarity: number) => void
+): Promise<void> {
+  console.log(`🎯 [DEPRECATED] Using old real-time verification, use performInstantVerification instead`);
+  
+  // Redirect to instant verification with adapter
+  await performInstantVerification(
+    video,
+    storedEncoding,
+    (status: string, confidence: number) => {
+      // Adapter: convert new format to old format
+      onProgress(confidence, 0); // similarity not available in progress
+    },
+    (success: boolean, similarity: number, confidence: number) => {
+      onComplete(success, confidence, similarity);
+    }
+  );
 }
 
 /**
@@ -380,7 +625,7 @@ export async function getSystemSettings() {
     const data = await response.json();
     
     if (data.success) {
-      return {
+      return { 
         faceThreshold: parseInt(data.data.face_recognition_threshold?.value || '80'),
         gpsRadius: parseInt(data.data.gps_accuracy_radius?.value || '3000')
       };
@@ -390,7 +635,7 @@ export async function getSystemSettings() {
   }
   
   // Default settings
-      return { 
+    return {
     faceThreshold: 80,
     gpsRadius: 3000
   };

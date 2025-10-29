@@ -26,6 +26,11 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
   const [isTraining, setIsTraining] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
   const [currentScore, setCurrentScore] = useState(0);
+  
+  // ⚡ Use ref to prevent duplicate calls from stale closure
+  const encodingsRef = useRef<string[]>([]);
+  const scoresRef = useRef<number[]>([]);
+  const completedRef = useRef(false); // Flag to prevent duplicate completion
 
   useEffect(() => {
     // Wait for video element to be available
@@ -92,6 +97,12 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
         await videoRef.current.play();
         console.log('▶️ Video playing immediately, camera ready!');
         setIsLoading(false);
+        
+        // ⚡ AUTO-START TRAINING IMMEDIATELY!
+        setTimeout(() => {
+          console.log('⚡ Auto-starting training for step 1...');
+          startTrainingForStep(0); // Start from step 0!
+        }, 500); // Small delay to ensure video is fully ready
       } catch (playError) {
         console.log('⚠️ Immediate play failed, waiting for metadata...', playError);
         // Fallback: wait for metadata
@@ -101,6 +112,12 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
             await videoRef.current?.play();
             console.log('▶️ Video playing after metadata, camera ready!');
             setIsLoading(false);
+            
+            // ⚡ AUTO-START TRAINING AFTER METADATA LOADED
+            setTimeout(() => {
+              console.log('⚡ Auto-starting training for step 1...');
+              startTrainingForStep(0); // Start from step 0!
+            }, 500);
           } catch (playError2) {
             console.error('❌ Video play error after metadata:', playError2);
             setIsLoading(false);
@@ -111,6 +128,11 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
         setTimeout(() => {
           console.log('⏰ Video loading timeout, forcing ready state');
           setIsLoading(false);
+          // Still try to auto-start
+          setTimeout(() => {
+            console.log('⚡ Auto-starting training (timeout fallback)...');
+            startTrainingForStep(0); // Start from step 0!
+          }, 500);
         }, 3000);
       }
     } catch (err: any) {
@@ -120,16 +142,17 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
     }
   };
 
-  const startCurrentStep = async () => {
-    if (!videoRef.current || isTraining) return;
+  // ⚡ NEW: Start training for a SPECIFIC step index
+  const startTrainingForStep = async (stepIndex: number) => {
+    if (!videoRef.current || isTraining || stepIndex >= steps.length) return;
 
     setIsTraining(true);
     setCurrentProgress(0);
     setCurrentScore(0);
     setError(null);
 
-    const currentStepData = steps[currentStep];
-    console.log(`🎯 Starting training step: ${currentStepData.instruction}`);
+    const currentStepData = steps[stepIndex];
+    console.log(`🎯 Starting training step ${stepIndex + 1}: ${currentStepData.instruction}`);
 
     try {
       await performRealTimeTraining(
@@ -142,50 +165,128 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
         },
         // onComplete callback
         (encoding: string, finalScore: number) => {
-          console.log(`✅ Step ${currentStep + 1} completed with score: ${finalScore}%`);
+          console.log(`✅ Step ${stepIndex + 1} completed with score: ${finalScore}%`);
           
-          // Update captured encodings and scores
-          const newEncodings = [...capturedEncodings, encoding];
-          const newScores = [...capturedScores, finalScore];
-          setCapturedEncodings(newEncodings);
-          setCapturedScores(newScores);
+          // Update captured encodings and scores (both state and ref!)
+          setCapturedEncodings(prev => [...prev, encoding]);
+          setCapturedScores(prev => [...prev, finalScore]);
+          encodingsRef.current = [...encodingsRef.current, encoding];
+          scoresRef.current = [...scoresRef.current, finalScore];
 
           // Mark current step as completed
-          const updatedSteps = [...steps];
-          updatedSteps[currentStep].completed = true;
-          updatedSteps[currentStep].imageData = `Score: ${finalScore}%`; // Store score instead of image
-          setSteps(updatedSteps);
+          setSteps(prev => {
+            const updated = [...prev];
+            updated[stepIndex].completed = true;
+            updated[stepIndex].imageData = `Score: ${finalScore}%`;
+            return updated;
+          });
 
           setIsTraining(false);
           setCurrentProgress(100);
           setCurrentScore(finalScore);
 
-          // Move to next step or complete training
+          // ⚡ INSTANT next step or complete training
           setTimeout(() => {
-            if (currentStep < steps.length - 1) {
-              setCurrentStep(currentStep + 1);
+            const nextStepIndex = stepIndex + 1;
+            if (nextStepIndex < steps.length) {
+              // Move to next step
+              console.log(`✅ Step ${stepIndex + 1} complete! Moving to step ${nextStepIndex + 1}...`);
+              setCurrentStep(nextStepIndex);
               setCurrentProgress(0);
               setCurrentScore(0);
+              
+              // ⚡ AUTO-START next step IMMEDIATELY!
+              setTimeout(() => {
+                console.log(`⚡ Auto-starting step ${nextStepIndex + 1}...`);
+                startTrainingForStep(nextStepIndex); // Recursive call!
+              }, 300);
             } else {
-              completeTraining(newEncodings, newScores);
+              // All steps completed!
+              // ⚡ PREVENT DUPLICATE CALLS with flag!
+              if (completedRef.current) {
+                console.warn('⚠️ completeTraining already called, skipping duplicate!');
+                return;
+              }
+              
+              completedRef.current = true; // Set flag FIRST!
+              
+              // ⚡ Use ref values (always up-to-date!)
+              const allEncodings = encodingsRef.current;
+              const allScores = scoresRef.current;
+              
+              console.log(`🎉 All training steps completed!`);
+              console.log(`📊 Training steps count: ${allEncodings.length}`);
+              console.log(`📊 Individual step scores:`, allScores);
+              
+              // ⚡ Call completeTraining ONCE!
+              completeTraining(allEncodings, allScores);
             }
-          }, 1500); // Show success for 1.5 seconds
+          }, 800); // Show success briefly before next step
         },
         // onError callback
         (errorMessage: string) => {
-          console.error(`❌ Step ${currentStep + 1} failed:`, errorMessage);
+          // ⚠️ Use console.warn instead of console.error (less scary!)
+          console.warn(`⚠️ Step ${stepIndex + 1} failed:`, errorMessage);
+          
+          // 🛑 STOP KAMERA DULU sebelum show error!
+          console.log('🛑 [ERROR] Stopping camera before showing error...');
+          
+          // Get stream from video element
+          const activeStream = videoRef.current?.srcObject as MediaStream | null;
+          
+          // Stop all tracks
+          if (activeStream) {
+            activeStream.getTracks().forEach(track => {
+              console.log(`🛑 Stopping track: ${track.kind}`);
+              track.stop();
+            });
+          }
+          
+          // Pause & clear video element
+          if (videoRef.current) {
+            videoRef.current.pause();
+            videoRef.current.srcObject = null;
+          }
+          
+          // Clear state
+          setStream(null);
           setIsTraining(false);
           setCurrentProgress(0);
-          // Show error in modal - user can retry this specific step
-          setError(errorMessage);
-          // Don't reset the step - user can retry from current step
+          
+          // Show error modal AFTER camera stopped
+          setTimeout(() => {
+            console.log('✅ Camera stopped, showing error modal...');
+            setError(errorMessage);
+          }, 100);
         }
       );
     } catch (error: any) {
-      console.error('Training error:', error);
-      setError(error.message || 'Gagal memulai training');
+      console.warn('⚠️ Training error:', error);
+      
+      // 🛑 STOP KAMERA DULU sebelum show error!
+      console.log('🛑 [CATCH ERROR] Stopping camera...');
+      
+      const activeStream = videoRef.current?.srcObject as MediaStream | null;
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+      }
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      }
+      setStream(null);
       setIsTraining(false);
+      
+      // Show error AFTER camera stopped
+      setTimeout(() => {
+        setError(error.message || 'Gagal memulai training');
+      }, 100);
     }
+  };
+
+  // Wrapper function for compatibility with retry button
+  const startCurrentStep = () => {
+    startTrainingForStep(currentStep);
   };
 
   const completeTraining = (encodings: string[], scores: number[]) => {
@@ -209,17 +310,40 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
       console.log('🎉 All training steps completed!');
       console.log('📊 Training steps count:', encodings.length);
       console.log('📊 Individual step scores:', scores);
+      console.log(`📊 Step details: ${scores.map((s, i) => `Step ${i+1}=${s}%`).join(', ')}`);
+      console.log(`📊 Sum: ${scores.reduce((a, b) => a + b, 0)} / Count: ${scores.length}`);
       console.log('📊 Average match score:', roundedScore + '%');
       console.log('📊 Averaged descriptor created (128D)');
       
-      // Stop camera stream before completing
-      console.log('🔴 Training completed, stopping camera stream');
-      if (stream) {
-        stopCameraStream(stream);
-        setStream(null);
+      // ⚡ STOP CAMERA COMPLETELY (like verification!)
+      console.log('🛑 [COMPLETE] Stopping camera...');
+      
+      // Get stream directly from video element (most reliable!)
+      const activeStream = videoRef.current?.srcObject as MediaStream | null;
+      
+      // Step 1: Stop all tracks FIRST
+      if (activeStream) {
+        const tracks = activeStream.getTracks();
+        tracks.forEach(track => {
+          console.log(`🛑 Stopping track: ${track.kind}`);
+          track.stop();
+        });
       }
       
-      onComplete(finalEncoding, roundedScore);
+      // Step 2: Remove srcObject from video element
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      }
+      
+      // Step 3: Clear state
+      setStream(null);
+      
+      // ⚡ Small delay to ensure camera is fully stopped before closing modal
+      setTimeout(() => {
+        console.log('✅ Camera stopped, calling onComplete...');
+        onComplete(finalEncoding, roundedScore);
+      }, 100);
     } catch (error) {
       console.error('❌ Error processing training data:', error);
       setError('Gagal memproses data wajah');
@@ -289,11 +413,36 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
                   </div>
                   <div className="flex gap-3">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         setError(null);
                         setCurrentProgress(0);
-                        // Start training again from CURRENT step (not reset)
-                        startCurrentStep();
+                        
+                        // ⚡ RE-START CAMERA dulu sebelum retry!
+                        console.log('🔄 Retrying... Re-starting camera...');
+                        setIsLoading(true);
+                        
+                        try {
+                          const cameraStream = await getCameraStream();
+                          if (cameraStream && videoRef.current) {
+                            videoRef.current.srcObject = cameraStream;
+                            setStream(cameraStream);
+                            
+                            await videoRef.current.play();
+                            setIsLoading(false);
+                            
+                            // Start training dari CURRENT step (not reset)
+                            setTimeout(() => {
+                              console.log('⚡ Camera ready, retrying training...');
+                              startCurrentStep();
+                            }, 500);
+                          } else {
+                            throw new Error('Gagal mengakses kamera');
+                          }
+                        } catch (err: any) {
+                          console.error('❌ Retry camera error:', err);
+                          setError(err.message || 'Gagal menginisialisasi kamera untuk retry');
+                          setIsLoading(false);
+                        }
                       }}
                       className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl shadow-lg transition-all"
                     >
@@ -335,7 +484,7 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
             {steps[currentStep]?.instruction}
           </h3>
           <p className="text-gray-600">
-            {isTraining ? 'Ikuti instruksi dan tunggu lingkaran hijau' : 'Klik "Mulai Step" untuk memulai pelatihan'}
+            {isTraining ? '⚡ Menganalisis wajah Anda...' : '✅ Siap untuk training otomatis'}
           </p>
           {isTraining && (
             <div className="mt-3">
@@ -357,7 +506,10 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
             playsInline
             muted
             className="w-full"
-            style={{ maxHeight: '400px' }}
+            style={{ 
+              maxHeight: '400px',
+              transform: 'scaleX(1)' // ⚡ NO MIRROR - kamera normal seperti foto biasa!
+            }}
             onLoadedMetadata={() => {
               console.log('📺 Video metadata loaded in JSX');
               setIsLoading(false);
@@ -456,31 +608,24 @@ export default function FaceTrainingCamera({ onComplete, onClose }: FaceTraining
           ))}
         </div>
 
-        {/* Controls */}
+        {/* Controls - Simplified (NO MORE MANUAL BUTTONS!) */}
         <div className="flex gap-4">
           {isTraining ? (
-            <div className="flex-1 bg-blue-100 text-blue-800 py-3 px-6 rounded-lg text-center font-semibold">
+            <div className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 px-6 rounded-lg text-center font-semibold shadow-lg">
               <div className="flex items-center justify-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                Sedang Melatih... {Math.round(currentProgress)}%
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                <span>⚡ Step {currentStep + 1} - Analyzing... {Math.round(currentProgress)}%</span>
               </div>
             </div>
           ) : (
-            <>
-              <button
-                onClick={startCurrentStep}
-                disabled={steps[currentStep]?.completed}
-                className="flex-1 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-all"
-              >
-                {steps[currentStep]?.completed ? 'Step Selesai' : 'Mulai Step'}
-              </button>
-              <button
-                onClick={resetTraining}
-                className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-all"
-              >
-                Ulangi Semua
-              </button>
-            </>
+            <div className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-6 rounded-lg text-center font-semibold shadow-lg">
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>✅ Step {currentStep + 1} Ready - Auto-starting...</span>
+              </div>
+            </div>
           )}
         </div>
       </div>

@@ -93,24 +93,36 @@ export function calculateFaceDistance(descriptor1: Float32Array, descriptor2: Fl
 /**
  * Calculate similarity percentage from euclidean distance
  * 0% = completely different, 100% = identical
+ * 
+ * STRICT FORMULA - Based on face-api.js best practices:
+ * - Same person: distance < 0.4 → similarity > 85%
+ * - Different person: distance > 0.6 → similarity < 40%
  */
 export function distanceToSimilarity(distance: number): number {
-  // Typical distance for same person: 0.4 - 0.6
-  // Typical distance for different person: 0.6+
-  // We'll use 0.6 as threshold
+  // Face-api.js standard thresholds:
+  // - Excellent match (same person): 0.0 - 0.4
+  // - Good match (same person): 0.4 - 0.5
+  // - Borderline: 0.5 - 0.6
+  // - Different person: > 0.6
   
-  if (distance <= 0.4) {
-    // Very similar - map 0.0-0.4 to 90-100%
-    return Math.round(90 + (0.4 - distance) / 0.4 * 10);
+  if (distance <= 0.3) {
+    // Excellent match - map 0.0-0.3 to 95-100%
+    return Math.round(95 + (0.3 - distance) / 0.3 * 5);
+  } else if (distance <= 0.4) {
+    // Very good match - map 0.3-0.4 to 85-95%
+    return Math.round(85 + (0.4 - distance) / 0.1 * 10);
+  } else if (distance <= 0.5) {
+    // Good match - map 0.4-0.5 to 70-85%
+    return Math.round(70 + (0.5 - distance) / 0.1 * 15);
   } else if (distance <= 0.6) {
-    // Somewhat similar - map 0.4-0.6 to 70-90%
-    return Math.round(70 + (0.6 - distance) / 0.2 * 20);
+    // Borderline - map 0.5-0.6 to 50-70%
+    return Math.round(50 + (0.6 - distance) / 0.1 * 20);
   } else if (distance <= 0.8) {
-    // Different - map 0.6-0.8 to 40-70%
-    return Math.round(40 + (0.8 - distance) / 0.2 * 30);
+    // Different person - map 0.6-0.8 to 20-50%
+    return Math.round(20 + (0.8 - distance) / 0.2 * 30);
   } else {
-    // Very different - map 0.8-1.2 to 0-40%
-    const similarity = Math.max(0, 40 - (distance - 0.8) / 0.4 * 40);
+    // Very different - map 0.8+ to 0-20%
+    const similarity = Math.max(0, 20 - (distance - 0.8) / 0.4 * 20);
     return Math.round(similarity);
   }
 }

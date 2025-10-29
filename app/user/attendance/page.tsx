@@ -299,24 +299,24 @@ export default function AttendancePage() {
         }
       } else {
         // Handle check-in
-        console.log('✅ Verification successful, proceeding with check-in...');
-        const response = await fetch('/api/attendance/check-in', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employee_id: employee.id,
+      console.log('✅ Verification successful, proceeding with check-in...');
+      const response = await fetch('/api/attendance/check-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_id: employee.id,
             face_match_score: verificationResult.score,
-            latitude: location?.lat,
-            longitude: location?.lng,
-          }),
-        });
+          latitude: location?.lat,
+          longitude: location?.lng,
+        }),
+      });
 
-        const data = await response.json();
-        if (data.success) {
+      const data = await response.json();
+      if (data.success) {
           alert(`✅ Check-in berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${new Date().toLocaleString()}`);
-          fetchTodayAttendance();
-        } else {
-          alert(`❌ Check-in gagal: ${data.error || 'Unknown error'}`);
+        fetchTodayAttendance();
+      } else {
+        alert(`❌ Check-in gagal: ${data.error || 'Unknown error'}`);
         }
       }
     } catch (error: any) {
@@ -355,7 +355,7 @@ export default function AttendancePage() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    
     // Validation
     if (!editFormData.username || editFormData.username.trim() === '') {
       alert('Username tidak boleh kosong!');
@@ -403,7 +403,7 @@ export default function AttendancePage() {
       });
 
       const data = await response.json();
-
+      
       if (data.success) {
         const updatedUser = {
           ...user,
@@ -472,16 +472,16 @@ export default function AttendancePage() {
               <div className="text-left hidden sm:block flex-shrink-0">
                 <p className="text-white font-semibold text-sm">{user?.username || 'User'}</p>
                 <p className="text-white/60 text-xs">Karyawan</p>
-              </div>
+          </div>
             </button>
             
             {/* Logout Button */}
-            <button
+          <button
               onClick={handleLogout}
               className="bg-white/10 hover:bg-white/20 backdrop-blur-lg border border-white/20 text-white font-semibold py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg sm:rounded-xl shadow-lg transition-all text-xs sm:text-sm flex items-center gap-1.5"
-            >
+          >
               🚪 Logout
-            </button>
+          </button>
           </div>
         </div>
 
@@ -525,7 +525,7 @@ export default function AttendancePage() {
               disabled={!todayAttendance || todayAttendance.check_out_time || loading}
               className="w-full bg-gradient-to-r from-red-400 to-pink-500 text-white font-bold py-3 sm:py-4 px-4 sm:px-6 rounded-lg sm:rounded-xl hover:from-red-500 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
             >
-              {loading ? 'Processing...' : 'Check Out'}
+              {loading ? 'Processing...' : 'Check out with Face'}
             </button>
           </div>
         </div>
@@ -613,6 +613,12 @@ export default function AttendancePage() {
             setShowResultModal(false);
             setVerificationResult(null);
             handleContinueAfterVerification();
+          }}
+          onRetry={() => {
+            // Retry = Buka kamera lagi (sama seperti klik "Check in with Face")
+            setShowResultModal(false);
+            setVerificationResult(null);
+            setShowCamera(true); // ← Buka kamera lagi!
           }}
         />
       )}
@@ -782,46 +788,46 @@ export default function AttendancePage() {
                   </h3>
                   
                   <div className="space-y-4">
-                    <div>
+              <div>
                       <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
                         Password Saat Ini
                       </label>
-                      <input
-                        type="password"
+                <input
+                  type="password"
                         value={editFormData.currentPassword}
                         onChange={(e) => setEditFormData({ ...editFormData, currentPassword: e.target.value })}
                         className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
                         placeholder="Password lama"
-                      />
-                    </div>
+                />
+              </div>
 
-                    <div>
+              <div>
                       <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
                         Password Baru
                       </label>
-                      <input
-                        type="password"
+                <input
+                  type="password"
                         value={editFormData.newPassword}
                         onChange={(e) => setEditFormData({ ...editFormData, newPassword: e.target.value })}
                         className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
                         placeholder="Min. 6 karakter"
-                        minLength={6}
-                      />
-                    </div>
+                  minLength={6}
+                />
+              </div>
 
-                    <div>
+              <div>
                       <label className="block text-white/80 mb-2 text-xs sm:text-sm font-semibold">
                         Konfirmasi Password
                       </label>
-                      <input
-                        type="password"
+                <input
+                  type="password"
                         value={editFormData.confirmPassword}
                         onChange={(e) => setEditFormData({ ...editFormData, confirmPassword: e.target.value })}
                         className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
                         placeholder="Ulangi password"
-                        minLength={6}
-                      />
-                    </div>
+                  minLength={6}
+                />
+              </div>
 
                     <p className="text-white/40 text-xs">
                       💡 Kosongkan jika tidak ingin mengubah password
