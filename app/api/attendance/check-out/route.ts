@@ -14,16 +14,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find today's check-in record
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get current time in Asia/Jakarta timezone
+    const now = new Date();
+    
+    // Use Intl.DateTimeFormat for accurate timezone conversion
+    const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    
+    const jakartaParts = jakartaFormatter.formatToParts(now);
+    const jakartaDateObj = {
+      year: parseInt(jakartaParts.find(p => p.type === 'year')?.value || '0'),
+      month: parseInt(jakartaParts.find(p => p.type === 'month')?.value || '0'),
+      day: parseInt(jakartaParts.find(p => p.type === 'day')?.value || '0')
+    };
+    
+    // Find today's check-in record (using Asia/Jakarta date)
+    // Create date objects for Jakarta timezone date range
+    const jakartaToday = new Date(jakartaDateObj.year, jakartaDateObj.month - 1, jakartaDateObj.day, 0, 0, 0);
+    const jakartaTomorrow = new Date(jakartaToday);
+    jakartaTomorrow.setDate(jakartaTomorrow.getDate() + 1);
     
     const { data: checkInRecord, error: findError } = await supabaseServer
       .from('attendance')
       .select('*')
       .eq('employee_id', employee_id)
-      .gte('check_in_time', today.toISOString())
-      .lt('check_in_time', new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString())
+      .gte('check_in_time', jakartaToday.toISOString())
+      .lt('check_in_time', jakartaTomorrow.toISOString())
       .is('check_out_time', null)
       .order('check_in_time', { ascending: false })
       .limit(1)

@@ -41,10 +41,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get current time in Asia/Jakarta timezone
     const now = new Date();
-    const currentDateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentTimeStr = now.toTimeString().slice(0, 5); // HH:MM
-    const dayOfWeek = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+    
+    // Use Intl.DateTimeFormat for accurate timezone conversion
+    const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    
+    const jakartaParts = jakartaFormatter.formatToParts(now);
+    const jakartaDateObj = {
+      year: parseInt(jakartaParts.find(p => p.type === 'year')?.value || '0'),
+      month: parseInt(jakartaParts.find(p => p.type === 'month')?.value || '0'),
+      day: parseInt(jakartaParts.find(p => p.type === 'day')?.value || '0'),
+      hour: parseInt(jakartaParts.find(p => p.type === 'hour')?.value || '0'),
+      minute: parseInt(jakartaParts.find(p => p.type === 'minute')?.value || '0')
+    };
+    
+    // Create Jakarta date object for day of week calculation
+    const jakartaDate = new Date(jakartaDateObj.year, jakartaDateObj.month - 1, jakartaDateObj.day, jakartaDateObj.hour, jakartaDateObj.minute);
+    
+    // Date string in Asia/Jakarta timezone (YYYY-MM-DD)
+    const currentDateStr = `${jakartaDateObj.year}-${String(jakartaDateObj.month).padStart(2, '0')}-${String(jakartaDateObj.day).padStart(2, '0')}`;
+    
+    // Time string in Asia/Jakarta timezone (HH:MM, 24-hour format)
+    const currentTimeStr = `${String(jakartaDateObj.hour).padStart(2, '0')}:${String(jakartaDateObj.minute).padStart(2, '0')}`;
+    
+    // Day of week in Asia/Jakarta timezone (0=Sunday, 1=Monday, ..., 6=Saturday)
+    const dayOfWeek = jakartaDate.getDay();
 
     // 1. CHECK HOLIDAY
     const { data: holidayData } = await supabaseServer
@@ -90,29 +121,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. CHECK IF TOO EARLY (more than 1 hour before work starts)
-    const minutesBeforeStart = getMinutesDifference(currentTimeStr, scheduleData.start_time);
+    // 3. CHECK IF TOO EARLY (only block if more than 1 hour before work window starts)
+    // This validation allows check-in within the work window or up to 1 hour before
+    const workWindowStart = scheduleData.start_time;
+    const checkInMinutes = timeToMinutes(currentTimeStr);
+    const workStartMinutes = timeToMinutes(workWindowStart);
+    
+    // Calculate how many minutes before work start (negative = before, positive = after)
+    const minutesBeforeStart = checkInMinutes - workStartMinutes;
+    
+    // Only block if check-in is MORE THAN 1 hour before work window starts
+    // This means: if checkInMinutes < (workStartMinutes - 60), then block
+    // Or: if (checkInMinutes - workStartMinutes) < -60, then block
+    // Examples:
+    // - Work starts 05:20, check-in 05:25 → minutesBeforeStart = 5, allowed ✓
+    // - Work starts 05:20, check-in 05:20 → minutesBeforeStart = 0, allowed ✓
+    // - Work starts 05:20, check-in 04:30 → minutesBeforeStart = -50, allowed ✓ (within 1 hour buffer)
+    // - Work starts 05:20, check-in 04:15 → minutesBeforeStart = -65, blocked ✗ (too early)
     if (minutesBeforeStart < -60) {
       return NextResponse.json(
         { 
           success: false, 
-          error: `Terlalu pagi untuk check-in. Jam kerja dimulai pukul ${scheduleData.start_time}`,
+          error: `Terlalu pagi untuk check-in. Rentang jam masuk dimulai pukul ${scheduleData.start_time}. Check-in diizinkan maksimal 1 jam sebelum jam mulai.`,
           schedule: scheduleData
         },
         { status: 400 }
       );
     }
 
-    // 4. CHECK IF ALREADY CHECKED IN TODAY
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // 4. CHECK IF ALREADY CHECKED IN TODAY (using Asia/Jakarta date)
+    // Create date objects for Jakarta timezone date range
+    const jakartaToday = new Date(jakartaDateObj.year, jakartaDateObj.month - 1, jakartaDateObj.day, 0, 0, 0);
+    const jakartaTomorrow = new Date(jakartaToday);
+    jakartaTomorrow.setDate(jakartaTomorrow.getDate() + 1);
     
     const { data: existingCheckIn } = await supabaseServer
       .from('attendance')
       .select('id')
       .eq('employee_id', employee_id)
-      .gte('check_in_time', today.toISOString())
-      .lt('check_in_time', new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString())
+      .gte('check_in_time', jakartaToday.toISOString())
+      .lt('check_in_time', jakartaTomorrow.toISOString())
       .is('check_out_time', null)
       .single();
 
@@ -193,12 +241,12 @@ export async function POST(request: NextRequest) {
       statusDetail = 'on_time';
     }
 
-    // 6. INSERT CHECK-IN RECORD
+    // 6. INSERT CHECK-IN RECORD (use server UTC time, but based on Jakarta calculation)
     const { data, error } = await supabaseServer
       .from('attendance')
       .insert({
         employee_id,
-        check_in_time: now.toISOString(),
+        check_in_time: now.toISOString(), // Store as UTC in database
         check_in_latitude: latitude,
         check_in_longitude: longitude,
         office_location_id: location_id,

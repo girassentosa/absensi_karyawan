@@ -54,7 +54,10 @@ export default function AttendancePage() {
       const response = await fetch('/api/work-schedules');
       const data = await response.json();
       if (data.success) {
-        const dayOfWeek = new Date().getDay();
+        // Get day of week in Asia/Jakarta timezone
+        const now = new Date();
+        const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const dayOfWeek = jakartaDate.getDay();
         const schedule = data.data.find((s: any) => s.day_of_week === dayOfWeek);
         setTodaySchedule(schedule);
       }
@@ -241,30 +244,38 @@ export default function AttendancePage() {
 
         const data = await response.json();
         if (data.success) {
-          alert(`✅ Check-out berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${new Date().toLocaleString()}`);
+          const now = new Date();
+          const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+          const timeStr = `${String(jakartaTime.getHours()).padStart(2, '0')}:${String(jakartaTime.getMinutes()).padStart(2, '0')}`;
+          const dateStr = jakartaTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+          alert(`✅ Check-out berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${timeStr} - ${dateStr}`);
           fetchTodayAttendance();
           setIsCheckOut(false);
         } else {
           alert(`❌ Check-out gagal: ${data.error || 'Unknown error'}`);
         }
       } else {
-        const response = await fetch('/api/attendance/check-in', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employee_id: employee.id,
+      const response = await fetch('/api/attendance/check-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_id: employee.id,
             face_match_score: verificationResult.score,
-            latitude: location?.lat,
-            longitude: location?.lng,
-          }),
-        });
+          latitude: location?.lat,
+          longitude: location?.lng,
+        }),
+      });
 
-        const data = await response.json();
-        if (data.success) {
-          alert(`✅ Check-in berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${new Date().toLocaleString()}`);
-          fetchTodayAttendance();
-        } else {
-          alert(`❌ Check-in gagal: ${data.error || 'Unknown error'}`);
+      const data = await response.json();
+      if (data.success) {
+          const now = new Date();
+          const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+          const timeStr = `${String(jakartaTime.getHours()).padStart(2, '0')}:${String(jakartaTime.getMinutes()).padStart(2, '0')}`;
+          const dateStr = jakartaTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+          alert(`✅ Check-in berhasil!\n📊 Skor verifikasi: ${verificationResult.score}%\n📍 Lokasi: ${gpsValidation.office} (${gpsValidation.distance}m)\n⏰ Waktu: ${timeStr} - ${dateStr}`);
+        fetchTodayAttendance();
+      } else {
+        alert(`❌ Check-in gagal: ${data.error || 'Unknown error'}`);
         }
       }
     } catch (error: any) {
@@ -282,14 +293,19 @@ export default function AttendancePage() {
   const formatTime = (dateString: string) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    // Convert to Asia/Jakarta timezone and format as 24-hour (HH:MM)
+    const jakartaDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const hours = String(jakartaDate.getHours()).padStart(2, '0');
+    const minutes = String(jakartaDate.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
   };
 
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: 'Asia/Jakarta'
   });
 
   return (
@@ -353,7 +369,7 @@ export default function AttendancePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <div>
+          <div>
                   <h3 className="text-sm font-semibold text-slate-600">Jadwal Hari Ini</h3>
                   <p className="text-lg font-bold text-slate-900">{todaySchedule.day_name}</p>
                 </div>
@@ -414,11 +430,11 @@ export default function AttendancePage() {
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-md text-xs font-semibold">
                         ✓ Wajah Terlatih
                       </span>
-                    )}
-                  </div>
+            )}
+          </div>
                 </div>
               </div>
-            </div>
+        </div>
           )}
 
           {/* Check In/Out Cards */}
@@ -439,23 +455,23 @@ export default function AttendancePage() {
                 </div>
               </div>
               <div className="p-4 sm:p-5">
-                <button
-                  onClick={() => {
-                    if (!employee?.face_encoding_path) {
-                      alert('Wajah Anda belum dilatih. Silakan hubungi admin untuk melakukan pelatihan wajah.');
-                      return;
-                    }
+            <button
+              onClick={() => {
+                if (!employee?.face_encoding_path) {
+                  alert('Wajah Anda belum dilatih. Silakan hubungi admin untuk melakukan pelatihan wajah.');
+                  return;
+                }
                     setIsCheckOut(false);
-                    setShowCamera(true);
-                  }}
-                  disabled={todayAttendance || loading}
+                setShowCamera(true);
+              }}
+              disabled={todayAttendance || loading}
                   className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg text-sm sm:text-base flex items-center justify-center gap-2"
-                >
+            >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                  {loading ? 'Processing...' : 'Check In with Face'}
-                </button>
+              {loading ? 'Processing...' : 'Check In with Face'}
+            </button>
                 {todayAttendance && (
                   <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <p className="text-xs text-green-700 font-semibold flex items-center gap-1.5">
@@ -467,7 +483,7 @@ export default function AttendancePage() {
                   </div>
                 )}
               </div>
-            </div>
+          </div>
 
             {/* Check Out Card */}
             <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-all">
@@ -485,7 +501,7 @@ export default function AttendancePage() {
                 </div>
               </div>
               <div className="p-4 sm:p-5">
-                <button
+            <button
                   onClick={() => {
                     setIsCheckOut(true);
                     setShowCamera(true);
@@ -497,7 +513,7 @@ export default function AttendancePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
                   {loading ? 'Processing...' : 'Check out with Face'}
-                </button>
+            </button>
                 {todayAttendance?.check_out_time && (
                   <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                     <p className="text-xs text-red-700 font-semibold flex items-center gap-1.5">
@@ -509,11 +525,11 @@ export default function AttendancePage() {
                   </div>
                 )}
               </div>
-            </div>
           </div>
+        </div>
 
           {/* Today's Attendance Summary */}
-          {todayAttendance && (
+        {todayAttendance && (
             <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
               <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                 <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -525,20 +541,20 @@ export default function AttendancePage() {
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3 sm:p-4">
                   <p className="text-xs text-green-600 font-medium mb-1">Check-in</p>
                   <p className="text-lg sm:text-xl font-bold text-green-700">{formatTime(todayAttendance.check_in_time)}</p>
-                  <p className="text-xs text-green-600 mt-1">{new Date(todayAttendance.check_in_time).toLocaleDateString('id-ID')}</p>
+                  <p className="text-xs text-green-600 mt-1">{new Date(todayAttendance.check_in_time).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}</p>
                 </div>
                 <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-3 sm:p-4">
                   <p className="text-xs text-indigo-600 font-medium mb-1">Check-out</p>
                   <p className="text-lg sm:text-xl font-bold text-indigo-700">
                     {todayAttendance.check_out_time ? formatTime(todayAttendance.check_out_time) : 'Belum Check-out'}
                   </p>
-                  {todayAttendance.check_out_time && (
-                    <p className="text-xs text-indigo-600 mt-1">{new Date(todayAttendance.check_out_time).toLocaleDateString('id-ID')}</p>
-                  )}
+              {todayAttendance.check_out_time && (
+                    <p className="text-xs text-indigo-600 mt-1">{new Date(todayAttendance.check_out_time).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}</p>
+              )}
                 </div>
-              </div>
             </div>
-          )}
+          </div>
+        )}
         </div>
       </div>
 
@@ -566,7 +582,7 @@ export default function AttendancePage() {
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-12 h-12 sm:w-14 sm:h-14 bg-blue-500 rounded-full animate-pulse opacity-50"></div>
                   </div>
-                </div>
+              </div>
               </div>
               
               <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">
@@ -582,7 +598,7 @@ export default function AttendancePage() {
                 <div className="w-2 h-2 sm:w-3 sm:h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
                 <div className="w-2 h-2 sm:w-3 sm:h-3 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
               </div>
-            </div>
+              </div>
           </div>
         </div>
       )}

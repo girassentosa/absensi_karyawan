@@ -136,7 +136,10 @@ export default function AdminDashboard() {
           const schedulesRes = await fetch('/api/work-schedules');
           const schedulesJson = await schedulesRes.json();
           if (schedulesJson?.success) {
-            const dowNow = new Date().getDay();
+            // Get day of week in Asia/Jakarta timezone
+            const now = new Date();
+            const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+            const dowNow = jakartaDate.getDay();
             todayScheduleLocal = (schedulesJson.data || []).find((d: any) => d.day_of_week === dowNow && d.is_active !== false);
           }
         } catch {}
@@ -178,7 +181,10 @@ export default function AdminDashboard() {
       const wsRes = await fetch('/api/work-schedules');
       const wsData = await wsRes.json();
       if (wsData.success) {
-        const dow = new Date().getDay(); // 0..6
+        // Get day of week in Asia/Jakarta timezone
+        const now = new Date();
+        const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const dow = jakartaDate.getDay(); // 0..6
         const schedule = wsData.data.find((d: any) => d.day_of_week === dow);
         setTodaySchedule(schedule || null);
       }
@@ -305,8 +311,10 @@ export default function AdminDashboard() {
 
       const activeEmployees = employeesData?.data?.filter((e: any) => e.is_active) || [];
 
-      // Determine today's schedule
-      const dow = new Date().getDay();
+      // Determine today's schedule (using Asia/Jakarta timezone)
+      const now = new Date();
+      const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+      const dow = jakartaDate.getDay();
       const todaySch = schedulesData?.data?.find((d: any) => d.day_of_week === dow && d.is_active);
 
       const attToday = attTodayData?.data || [];
@@ -345,14 +353,14 @@ export default function AdminDashboard() {
       });
 
       // Weekly KPIs
-      const now = new Date();
+      const nowWeek = new Date();
       const weekAgo = new Date();
-      weekAgo.setDate(now.getDate() - 6);
+      weekAgo.setDate(nowWeek.getDate() - 6);
       const histRes = await fetch('/api/attendance/history');
       const histData = await histRes.json();
       const history = (histData?.data || []).filter((a: any) => {
-        const d = new Date(a.check_in_time || a.created_at || now);
-        return d >= new Date(weekAgo.toDateString()) && d <= now;
+        const d = new Date(a.check_in_time || a.created_at || nowWeek);
+        return d >= new Date(weekAgo.toDateString()) && d <= nowWeek;
       });
 
       // presencePercent: (unique employee-day attendances) / (activeEmployees * workingDaysInRange)
