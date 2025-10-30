@@ -55,7 +55,7 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    router.push('/user');
+    router.push('/');
   };
 
   const handleOpenProfileModal = () => setShowProfileModal(true);

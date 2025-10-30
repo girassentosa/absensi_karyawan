@@ -15,6 +15,8 @@ export default function AttendancePage() {
   const [todayAttendance, setTodayAttendance] = useState<any>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [todaySchedule, setTodaySchedule] = useState<any>(null);
+  const [isHoliday, setIsHoliday] = useState<any>(null);
   
   // Verification result modal state
   const [showResultModal, setShowResultModal] = useState(false);
@@ -43,7 +45,36 @@ export default function AttendancePage() {
     setUser(parsedUser);
     fetchEmployeeData(parsedUser.email);
     getLocation();
+    fetchTodaySchedule();
+    checkHoliday();
   }, [router]);
+
+  const fetchTodaySchedule = async () => {
+    try {
+      const response = await fetch('/api/work-schedules');
+      const data = await response.json();
+      if (data.success) {
+        const dayOfWeek = new Date().getDay();
+        const schedule = data.data.find((s: any) => s.day_of_week === dayOfWeek);
+        setTodaySchedule(schedule);
+      }
+    } catch (error) {
+      console.error('Error fetching schedule:', error);
+    }
+  };
+
+  const checkHoliday = async () => {
+    try {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const response = await fetch(`/api/holidays?date=${today}`);
+      const data = await response.json();
+      if (data.success && data.data.length > 0) {
+        setIsHoliday(data.data[0]);
+      }
+    } catch (error) {
+      console.error('Error checking holiday:', error);
+    }
+  };
 
   useEffect(() => {
     if (employee) {
@@ -287,6 +318,76 @@ export default function AttendancePage() {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Holiday Banner */}
+          {isHoliday && (
+            <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 shadow-lg border border-purple-200">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base sm:text-lg font-bold text-white mb-1">🎉 Hari Libur</h3>
+                  <p className="text-sm text-white/90">{isHoliday.name}</p>
+                  <p className="text-xs text-white/75 mt-1">{isHoliday.description || 'Selamat berlibur!'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Work Schedule Info */}
+          {todaySchedule && (
+            <div className={`rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 shadow-sm border ${
+              todaySchedule.is_active 
+                ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200' 
+                : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  todaySchedule.is_active 
+                    ? 'bg-blue-500' 
+                    : 'bg-gray-400'
+                }`}>
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-600">Jadwal Hari Ini</h3>
+                  <p className="text-lg font-bold text-slate-900">{todaySchedule.day_name}</p>
+                </div>
+              </div>
+              
+              {todaySchedule.is_active ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white/60 rounded-lg p-3">
+                      <p className="text-xs text-slate-600 mb-1">Jam Kerja</p>
+                      <p className="text-base font-bold text-slate-900">{todaySchedule.start_time} - {todaySchedule.end_time}</p>
+                    </div>
+                    <div className="bg-white/60 rounded-lg p-3">
+                      <p className="text-xs text-slate-600 mb-1">Toleransi Terlambat</p>
+                      <p className="text-base font-bold text-orange-600">{todaySchedule.late_tolerance_minutes} menit</p>
+                    </div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                    <p className="text-xs text-amber-800 flex items-center gap-1.5">
+                      <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <span>Check-in setelah <strong>{todaySchedule.start_time}</strong> + <strong>{todaySchedule.late_tolerance_minutes} menit</strong> akan dicatat sebagai <strong>terlambat</strong>.</span>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/60 rounded-lg p-3 text-center">
+                  <p className="text-sm font-semibold text-gray-700">Hari ini bukan hari kerja</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Employee Info Card */}
           {employee && (
             <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-6 shadow-sm border border-slate-200">

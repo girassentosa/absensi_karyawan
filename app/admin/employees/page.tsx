@@ -24,6 +24,9 @@ export default function EmployeesPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -45,7 +48,7 @@ export default function EmployeesPage() {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    router.push('/admin');
+    router.push('/');
   };
 
   const checkAuth = () => {
@@ -308,14 +311,17 @@ export default function EmployeesPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 </div>
-                <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 truncate">Daftar Karyawan</h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 truncate">Daftar Karyawan</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 truncate">{currentDate}</p>
+                </div>
               </div>
             </div>
 
             {/* Right: Action Buttons */}
             <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => setShowAddModal(true)}
+              <button
+                onClick={() => setShowAddModal(true)}
                 className="px-3 sm:px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg text-green-600 hover:text-green-700 text-sm font-semibold transition-all flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -323,15 +329,6 @@ export default function EmployeesPage() {
                 </svg>
                 <span className="hidden sm:inline">Tambah</span>
               </button>
-              <button
-                onClick={handleLogout}
-                className="px-3 sm:px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span className="hidden sm:inline">Keluar</span>
-            </button>
             </div>
           </div>
         </div>

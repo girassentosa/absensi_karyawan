@@ -28,10 +28,13 @@ export default function AttendancePage() {
   const [filter, setFilter] = useState<'all' | 'today' | 'week' | 'month'>('today');
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    router.push('/admin');
+    router.push('/');
   };
 
   useEffect(() => {
@@ -151,26 +154,23 @@ export default function AttendancePage() {
             {/* Page Title */}
             <div className="flex items-center gap-3 flex-1 lg:flex-none">
               <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
                 </div>
-                <span>Laporan Absensi</span>
-              </h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">Laporan Absensi</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 truncate">{currentDate}</p>
+                </div>
+              </div>
+              
+              </div>
             </div>
 
-            {/* Logout Button */}
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span className="hidden sm:inline">Keluar</span>
-            </button>
+            {/* Logout moved to sidebar */}
           </div>
         </div>
       </header>

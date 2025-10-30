@@ -343,6 +343,172 @@ COMMENT ON COLUMN system_settings.setting_value IS 'Value of the setting (stored
 COMMENT ON COLUMN system_settings.description IS 'Human-readable description of the setting';
 
 -- ============================================
+-- WORK SCHEDULES TABLE (Jadwal Kerja)
+-- ============================================
+DROP TABLE IF EXISTS work_schedules CASCADE;
+CREATE TABLE work_schedules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    day_of_week INTEGER NOT NULL, -- 0=Minggu, 1=Senin, 2=Selasa, ..., 6=Sabtu
+    day_name VARCHAR(20) NOT NULL, -- 'Minggu', 'Senin', 'Selasa', etc.
+    start_time TIME NOT NULL, -- Jam masuk (awal)
+    on_time_end_time TIME, -- Akhir jendela "Tepat Waktu" (optional, jika NULL dihitung dari start_time + late_tolerance_minutes)
+    tolerance_start_time TIME, -- Awal jendela "Dalam Toleransi" (optional, jika NULL dihitung)
+    tolerance_end_time TIME, -- Akhir jendela "Dalam Toleransi" (optional, jika NULL dihitung)
+    end_time TIME NOT NULL, -- Jam pulang
+    is_active BOOLEAN DEFAULT true,
+    late_tolerance_minutes INTEGER DEFAULT 15, -- Toleransi keterlambatan dalam menit (untuk backward compatibility)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(day_of_week)
+);
+
+CREATE INDEX idx_work_schedules_day ON work_schedules(day_of_week);
+CREATE INDEX idx_work_schedules_active ON work_schedules(is_active);
+
+CREATE TRIGGER update_work_schedules_updated_at
+    BEFORE UPDATE ON work_schedules
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert default work schedule (Senin-Jumat 09:00-17:00)
+INSERT INTO work_schedules (day_of_week, day_name, start_time, on_time_end_time, tolerance_start_time, tolerance_end_time, end_time, is_active, late_tolerance_minutes) VALUES
+    (0, 'Minggu', '00:00', NULL, NULL, NULL, '00:00', false, 0),
+    (1, 'Senin', '09:00', '09:15', '09:15', '09:30', '17:00', true, 15),
+    (2, 'Selasa', '09:00', '09:15', '09:15', '09:30', '17:00', true, 15),
+    (3, 'Rabu', '09:00', '09:15', '09:15', '09:30', '17:00', true, 15),
+    (4, 'Kamis', '09:00', '09:15', '09:15', '09:30', '17:00', true, 15),
+    (5, 'Jumat', '09:00', '09:15', '09:15', '09:30', '17:00', true, 15),
+    (6, 'Sabtu', '09:00', '09:15', '09:15', '09:30', '13:00', false, 15)
+ON CONFLICT (day_of_week) DO NOTHING;
+
+-- Enable RLS
+ALTER TABLE work_schedules ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role can do everything" ON work_schedules
+    FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON work_schedules TO anon, authenticated, service_role;
+
+COMMENT ON TABLE work_schedules IS 'Work schedule configuration for each day of the week';
+COMMENT ON COLUMN work_schedules.day_of_week IS '0=Sunday, 1=Monday, ..., 6=Saturday (JavaScript Date.getDay() format)';
+COMMENT ON COLUMN work_schedules.is_active IS 'Whether this day is a working day';
+COMMENT ON COLUMN work_schedules.start_time IS 'Start of "Tepat Waktu" window (jam masuk awal)';
+COMMENT ON COLUMN work_schedules.on_time_end_time IS 'End of "Tepat Waktu" window. If NULL, calculated from start_time + late_tolerance_minutes';
+COMMENT ON COLUMN work_schedules.tolerance_start_time IS 'Start of "Dalam Toleransi" window. If NULL, calculated from on_time_end_time';
+COMMENT ON COLUMN work_schedules.tolerance_end_time IS 'End of "Dalam Toleransi" window. If NULL, calculated from tolerance_start_time + late_tolerance_minutes';
+COMMENT ON COLUMN work_schedules.late_tolerance_minutes IS 'Fallback tolerance in minutes if explicit time ranges are not set (backward compatibility)';
+
+-- ============================================
+-- HOLIDAYS TABLE (Hari Libur)
+-- ============================================
+DROP TABLE IF EXISTS holidays CASCADE;
+CREATE TABLE holidays (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    date DATE NOT NULL,
+    type VARCHAR(50) NOT NULL, -- 'national', 'company'
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_holidays_date ON holidays(date);
+CREATE INDEX idx_holidays_type ON holidays(type);
+CREATE INDEX idx_holidays_active ON holidays(is_active);
+
+CREATE TRIGGER update_holidays_updated_at
+    BEFORE UPDATE ON holidays
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert default holidays (contoh untuk 2025)
+INSERT INTO holidays (name, date, type, description) VALUES
+    ('Tahun Baru 2025', '2025-01-01', 'national', 'Hari Tahun Baru Masehi'),
+    ('Imlek 2576', '2025-01-29', 'national', 'Tahun Baru Imlek'),
+    ('Hari Raya Nyepi', '2025-03-22', 'national', 'Tahun Baru Saka'),
+    ('Waisak 2569', '2025-05-12', 'national', 'Hari Raya Waisak'),
+    ('Hari Kemerdekaan RI', '2025-08-17', 'national', 'HUT Kemerdekaan RI ke-80'),
+    ('Natal', '2025-12-25', 'national', 'Hari Raya Natal')
+ON CONFLICT DO NOTHING;
+
+-- Enable RLS
+ALTER TABLE holidays ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role can do everything" ON holidays
+    FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON holidays TO anon, authenticated, service_role;
+
+COMMENT ON TABLE holidays IS 'National and company holidays';
+COMMENT ON COLUMN holidays.type IS 'Type of holiday: national (public holiday) or company (internal company holiday)';
+COMMENT ON COLUMN holidays.is_active IS 'Whether this holiday is currently active (can be used to disable past holidays)';
+
+-- ============================================
+-- POLICIES TABLE (Kebijakan Perusahaan)
+-- ============================================
+DROP TABLE IF EXISTS policies CASCADE;
+CREATE TABLE policies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(50) NOT NULL, -- 'attendance', 'leave', 'general'
+    policy_data JSON, -- Additional structured data (optional)
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_policies_category ON policies(category);
+CREATE INDEX idx_policies_active ON policies(is_active);
+
+CREATE TRIGGER update_policies_updated_at
+    BEFORE UPDATE ON policies
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert default policies
+-- Note: Jadwal kerja dan toleransi keterlambatan diatur di tabel work_schedules
+INSERT INTO policies (title, description, category, policy_data) VALUES
+    (
+        'Cuti Tahunan',
+        'Setiap karyawan berhak mendapat 12 hari cuti tahunan yang bisa diambil setelah masa kerja 1 tahun.',
+        'leave',
+        '{"annual_leave_days": 12, "min_employment_months": 12}'::json
+    ),
+    (
+        'Cuti Sakit',
+        'Cuti sakit dengan surat dokter maksimal 3 hari berturut-turut tanpa potongan gaji. Lebih dari 3 hari memerlukan persetujuan khusus.',
+        'leave',
+        '{"max_consecutive_days": 3, "requires_medical_certificate": true}'::json
+    ),
+    (
+        'Dress Code',
+        'Senin-Kamis: Formal (kemeja + celana bahan). Jumat: Smart Casual. Sabtu (jika masuk): Casual rapi.',
+        'general',
+        '{"weekday": "formal", "friday": "smart_casual", "saturday": "casual"}'::json
+    ),
+    (
+        'Absensi Wajib',
+        'Karyawan wajib melakukan absensi check-in dan check-out setiap hari kerja menggunakan verifikasi wajah dan GPS.',
+        'attendance',
+        '{"requires_face_verification": true, "requires_gps": true}'::json
+    )
+ON CONFLICT DO NOTHING;
+
+-- Enable RLS
+ALTER TABLE policies ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role can do everything" ON policies
+    FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON policies TO anon, authenticated, service_role;
+
+COMMENT ON TABLE policies IS 'Company policies for attendance, leave, and general rules';
+COMMENT ON COLUMN policies.category IS 'Policy category: attendance, leave, or general';
+COMMENT ON COLUMN policies.policy_data IS 'Optional JSON data for structured policy parameters';
+
+-- ============================================
 -- HELPER VIEWS
 -- ============================================
 

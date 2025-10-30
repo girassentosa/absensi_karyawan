@@ -6,10 +6,15 @@ import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
 
 interface WorkSchedule {
   id: string;
-  day: string;
+  day_of_week: number;
+  day_name: string;
   start_time: string;
+  on_time_end_time: string | null;
+  tolerance_start_time: string | null;
+  tolerance_end_time: string | null;
   end_time: string;
   is_active: boolean;
+  late_tolerance_minutes: number;
 }
 
 interface Holiday {
@@ -17,6 +22,8 @@ interface Holiday {
   name: string;
   date: string;
   type: 'national' | 'company';
+  description?: string | null;
+  is_active?: boolean;
 }
 
 interface Policy {
@@ -26,66 +33,49 @@ interface Policy {
   category: 'attendance' | 'leave' | 'general';
 }
 
+// Helpers to convert time string <-> minutes from 00:00
+const timeStringToMinutes = (t: string): number => {
+  if (!t) return 0;
+  const [hh, mm] = t.split(':').map((p) => parseInt(p || '0', 10));
+  return (isNaN(hh) ? 0 : hh) * 60 + (isNaN(mm) ? 0 : mm);
+};
+
+const minutesToTimeString = (m: number): string => {
+  const mm = ((m % (24 * 60)) + (24 * 60)) % (24 * 60); // clamp into 0..1439
+  const hhPart = Math.floor(mm / 60);
+  const mmPart = mm % 60;
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${pad(hhPart)}:${pad(mmPart)}`;
+};
+
 export default function SchedulePolicyPage() {
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'schedule' | 'holidays' | 'policies'>('schedule');
+  const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
   
   // Schedule State
-  const [workSchedule, setWorkSchedule] = useState<WorkSchedule[]>([
-    { id: '1', day: 'Senin', start_time: '09:00', end_time: '17:00', is_active: true },
-    { id: '2', day: 'Selasa', start_time: '09:00', end_time: '17:00', is_active: true },
-    { id: '3', day: 'Rabu', start_time: '09:00', end_time: '17:00', is_active: true },
-    { id: '4', day: 'Kamis', start_time: '09:00', end_time: '17:00', is_active: true },
-    { id: '5', day: 'Jumat', start_time: '09:00', end_time: '17:00', is_active: true },
-    { id: '6', day: 'Sabtu', start_time: '09:00', end_time: '13:00', is_active: false },
-    { id: '7', day: 'Minggu', start_time: '00:00', end_time: '00:00', is_active: false },
-  ]);
+  const [workSchedule, setWorkSchedule] = useState<WorkSchedule[]>([]);
 
   // Holidays State
-  const [holidays, setHolidays] = useState<Holiday[]>([
-    { id: '1', name: 'Tahun Baru 2025', date: '2025-01-01', type: 'national' },
-    { id: '2', name: 'Imlek', date: '2025-01-29', type: 'national' },
-    { id: '3', name: 'Nyepi', date: '2025-03-22', type: 'national' },
-    { id: '4', name: 'Waisak', date: '2025-05-12', type: 'national' },
-    { id: '5', name: 'Anniversary Perusahaan', date: '2025-06-15', type: 'company' },
-  ]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
 
   // Policies State
-  const [policies, setPolicies] = useState<Policy[]>([
-    { 
-      id: '1', 
-      title: 'Toleransi Keterlambatan', 
-      description: 'Keterlambatan maksimal 15 menit tanpa potongan. Lebih dari 15 menit akan mendapat peringatan.',
-      category: 'attendance'
-    },
-    { 
-      id: '2', 
-      title: 'Cuti Tahunan', 
-      description: 'Setiap karyawan berhak mendapat 12 hari cuti tahunan yang bisa diambil setelah masa kerja 1 tahun.',
-      category: 'leave'
-    },
-    { 
-      id: '3', 
-      title: 'Cuti Sakit', 
-      description: 'Cuti sakit dengan surat dokter maksimal 3 hari berturut-turut tanpa potongan gaji.',
-      category: 'leave'
-    },
-    { 
-      id: '4', 
-      title: 'Dress Code', 
-      description: 'Senin-Kamis: Formal (kemeja + celana bahan). Jumat: Smart Casual.',
-      category: 'general'
-    },
-  ]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
 
   const [showAddScheduleModal, setShowAddScheduleModal] = useState(false);
   const [showAddHolidayModal, setShowAddHolidayModal] = useState(false);
   const [showAddPolicyModal, setShowAddPolicyModal] = useState(false);
+  const [showEditHolidayModal, setShowEditHolidayModal] = useState(false);
+  const [showEditPolicyModal, setShowEditPolicyModal] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
+  const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    router.push('/admin');
+    router.push('/');
   };
 
   useEffect(() => {
@@ -100,26 +90,194 @@ export default function SchedulePolicyPage() {
       router.push('/user/dashboard');
       return;
     }
+
+    // Fetch data from database
+    fetchWorkSchedules();
+    fetchHolidays();
+    fetchPolicies();
   }, [router]);
 
-  const handleUpdateSchedule = (id: string, field: 'start_time' | 'end_time' | 'is_active', value: any) => {
-    setWorkSchedule(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
-  };
-
-  const handleSaveSchedule = () => {
-    alert('✅ Jadwal kerja berhasil disimpan!');
-    console.log('Saved schedule:', workSchedule);
-  };
-
-  const handleDeleteHoliday = (id: string) => {
-    if (confirm('Hapus hari libur ini?')) {
-      setHolidays(prev => prev.filter(h => h.id !== id));
+  const fetchWorkSchedules = async () => {
+    try {
+      const response = await fetch('/api/work-schedules');
+      const data = await response.json();
+      if (data.success) {
+        setWorkSchedule(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching work schedules:', error);
     }
   };
 
-  const handleDeletePolicy = (id: string) => {
+  const fetchHolidays = async () => {
+    try {
+      const response = await fetch('/api/holidays');
+      const data = await response.json();
+      if (data.success) {
+        setHolidays(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching holidays:', error);
+    }
+  };
+
+  const fetchPolicies = async () => {
+    try {
+      const response = await fetch('/api/policies');
+      const data = await response.json();
+      if (data.success) {
+        setPolicies(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching policies:', error);
+    }
+  };
+
+  const handleUpdateSchedule = (id: string, field: 'start_time' | 'end_time' | 'on_time_end_time' | 'tolerance_start_time' | 'tolerance_end_time' | 'is_active', value: any) => {
+    setWorkSchedule(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  };
+
+  const handleSaveSchedule = async () => {
+    try {
+      // Update all schedules
+      for (const schedule of workSchedule) {
+        await fetch('/api/work-schedules', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(schedule),
+        });
+      }
+      alert('✅ Jadwal kerja berhasil disimpan!');
+      fetchWorkSchedules();
+    } catch (error) {
+      console.error('Error saving schedules:', error);
+      alert('❌ Gagal menyimpan jadwal kerja');
+    }
+  };
+
+  const handleAddHoliday = async (holidayData: { name: string; date: string; type: string; description?: string }) => {
+    try {
+      const response = await fetch('/api/holidays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(holidayData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('✅ Hari libur berhasil ditambahkan!');
+        fetchHolidays();
+        setShowAddHolidayModal(false);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error adding holiday:', error);
+      alert('❌ Gagal menambahkan hari libur');
+    }
+  };
+
+  const handleEditHoliday = async (holidayData: { id: string; name: string; date: string; type: string; description?: string }) => {
+    try {
+      const response = await fetch('/api/holidays', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(holidayData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('✅ Hari libur berhasil diupdate!');
+        fetchHolidays();
+        setShowEditHolidayModal(false);
+        setEditingHoliday(null);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error updating holiday:', error);
+      alert('❌ Gagal mengupdate hari libur');
+    }
+  };
+
+  const handleDeleteHoliday = async (id: string) => {
+    if (confirm('Hapus hari libur ini?')) {
+      try {
+        const response = await fetch(`/api/holidays?id=${id}`, {
+          method: 'DELETE',
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('✅ Hari libur berhasil dihapus!');
+          fetchHolidays();
+        } else {
+          alert(`❌ ${data.error}`);
+        }
+      } catch (error) {
+        console.error('Error deleting holiday:', error);
+        alert('❌ Gagal menghapus hari libur');
+      }
+    }
+  };
+
+  const handleAddPolicy = async (policyData: { title: string; description: string; category: string }) => {
+    try {
+      const response = await fetch('/api/policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(policyData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('✅ Kebijakan berhasil ditambahkan!');
+        fetchPolicies();
+        setShowAddPolicyModal(false);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error adding policy:', error);
+      alert('❌ Gagal menambahkan kebijakan');
+    }
+  };
+
+  const handleEditPolicy = async (policyData: { id: string; title: string; description: string; category: string }) => {
+    try {
+      const response = await fetch('/api/policies', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(policyData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('✅ Kebijakan berhasil diupdate!');
+        fetchPolicies();
+        setShowEditPolicyModal(false);
+        setEditingPolicy(null);
+      } else {
+        alert(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error updating policy:', error);
+      alert('❌ Gagal mengupdate kebijakan');
+    }
+  };
+
+  const handleDeletePolicy = async (id: string) => {
     if (confirm('Hapus kebijakan ini?')) {
-      setPolicies(prev => prev.filter(p => p.id !== id));
+      try {
+        const response = await fetch(`/api/policies?id=${id}`, {
+          method: 'DELETE',
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('✅ Kebijakan berhasil dihapus!');
+          fetchPolicies();
+        } else {
+          alert(`❌ ${data.error}`);
+        }
+      } catch (error) {
+        console.error('Error deleting policy:', error);
+        alert('❌ Gagal menghapus kebijakan');
+      }
     }
   };
 
@@ -141,26 +299,20 @@ export default function SchedulePolicyPage() {
             {/* Page Title */}
             <div className="flex items-center gap-3 flex-1 lg:flex-none">
               <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <span>Jadwal & Kebijakan</span>
-              </h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">Jadwal & Kebijakan</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 truncate">{currentDate}</p>
+                </div>
+              </div>
             </div>
 
-            {/* Logout Button */}
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span className="hidden sm:inline">Keluar</span>
-            </button>
+            {/* Logout moved to sidebar */}
           </div>
         </div>
       </header>
@@ -222,7 +374,7 @@ export default function SchedulePolicyPage() {
               </h2>
               <button
                 onClick={handleSaveSchedule}
-                className="px-4 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+                className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-semibold transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -233,24 +385,39 @@ export default function SchedulePolicyPage() {
             </div>
 
             <div className="space-y-3">
-              {workSchedule.map((schedule) => (
-                <div key={schedule.id} className={`rounded-lg sm:rounded-xl p-4 border transition-all ${
+              {([...workSchedule]
+                .sort((a, b) => {
+                  const ao = a.day_of_week === 0 ? 7 : a.day_of_week; // 1..6,7 (Mon..Sun)
+                  const bo = b.day_of_week === 0 ? 7 : b.day_of_week;
+                  return ao - bo;
+                })
+              ).map((schedule) => (
+                <div key={schedule.id} className={`rounded-lg sm:rounded-xl p-4 sm:p-5 border transition-all ${
                   schedule.is_active 
-                    ? 'bg-green-50 border-green-200 hover:bg-green-100' 
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-green-50 border-green-200 hover:shadow-md' 
+                    : 'bg-slate-50 border-slate-200 hover:shadow-md'
                 }`}>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    {/* Day & Toggle Switch */}
-                    <div className="flex items-center justify-between sm:w-52">
-                      <p className="text-slate-900 font-semibold text-sm sm:text-base flex items-center gap-2">
-                        {schedule.day}
-                        {schedule.is_active && (
-                          <span className="inline-flex items-center px-2 py-0.5 bg-green-500 text-white text-xs font-semibold rounded-full">
-                            ✓
-                          </span>
-                        )}
-                      </p>
-                      
+                  <div className="flex flex-col gap-4">
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm ${
+                          schedule.is_active 
+                            ? 'bg-green-500 text-white' 
+                            : 'bg-slate-300 text-slate-600'
+                        }`}>
+                          {schedule.day_name.substring(0, 3)}
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">{schedule.day_name}</h3>
+                          <p className={`text-xs font-medium ${
+                            schedule.is_active ? 'text-green-600' : 'text-slate-500'
+                          }`}>
+                            {schedule.is_active ? 'Hari Kerja' : 'Hari Libur'}
+                          </p>
+                        </div>
+                      </div>
+
                       {/* Toggle Switch */}
                       <button
                         onClick={() => handleUpdateSchedule(schedule.id, 'is_active', !schedule.is_active)}
@@ -268,44 +435,121 @@ export default function SchedulePolicyPage() {
                       </button>
                     </div>
 
-                    {/* Status Badge */}
-                    <div className="flex items-center gap-2 sm:w-20">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold ${
-                        schedule.is_active
-                          ? 'bg-green-100 text-green-700 border border-green-200'
-                          : 'bg-slate-200 text-slate-600 border border-slate-300'
-                      }`}>
-                        {schedule.is_active ? (
-                          <>
-                            <span>●</span>
-                            <span>Aktif</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>○</span>
-                            <span>Libur</span>
-                          </>
-                        )}
-                      </span>
-                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {/* Rentang Jam Masuk */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Rentang Jam Masuk</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="block text-[11px] text-slate-500 mb-1">Dari</span>
+                            <input
+                              type="time"
+                              value={schedule.start_time}
+                              onChange={(e) => handleUpdateSchedule(schedule.id, 'start_time', e.target.value)}
+                              disabled={!schedule.is_active}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                            />
+                          </div>
+                          <div>
+                            <span className="block text-[11px] text-slate-500 mb-1">Sampai</span>
+                            {(() => {
+                              // Gunakan on_time_end_time jika ada, jika tidak hitung dari start_time + tol (backward compat)
+                              let onTimeEnd = schedule.on_time_end_time;
+                              if (!onTimeEnd) {
+                                const startMin = timeStringToMinutes(schedule.start_time);
+                                const tol = schedule.late_tolerance_minutes || 0;
+                                onTimeEnd = minutesToTimeString(startMin + tol);
+                              }
+                              return (
+                                <input
+                                  type="time"
+                                  value={onTimeEnd}
+                                  onChange={(e) => {
+                                    handleUpdateSchedule(schedule.id, 'on_time_end_time', e.target.value);
+                                  }}
+                                  disabled={!schedule.is_active}
+                                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                />
+                              );
+                            })()}
+                          </div>
+                        </div>
+                        
+                      </div>
 
-                    {/* Time Inputs */}
-                    <div className="flex items-center gap-3 flex-1">
-                      <input
-                        type="time"
-                        value={schedule.start_time}
-                        onChange={(e) => handleUpdateSchedule(schedule.id, 'start_time', e.target.value)}
-                        disabled={!schedule.is_active}
-                        className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
-                      />
-                      <span className="text-slate-400 font-bold">-</span>
-                      <input
-                        type="time"
-                        value={schedule.end_time}
-                        onChange={(e) => handleUpdateSchedule(schedule.id, 'end_time', e.target.value)}
-                        disabled={!schedule.is_active}
-                        className="flex-1 bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
-                      />
+                      
+                      {/* Rentang Toleransi */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Rentang Toleransi</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(() => {
+                            // Gunakan tolerance_start_time jika ada, jika tidak hitung dari on_time_end_time atau start_time + tol
+                            let toleranceStart = schedule.tolerance_start_time;
+                            if (!toleranceStart) {
+                              if (schedule.on_time_end_time) {
+                                toleranceStart = schedule.on_time_end_time;
+                              } else {
+                                const startMin = timeStringToMinutes(schedule.start_time);
+                                const tol = schedule.late_tolerance_minutes || 0;
+                                toleranceStart = minutesToTimeString(startMin + tol);
+                              }
+                            }
+                            
+                            // Gunakan tolerance_end_time jika ada, jika tidak hitung dari tolerance_start_time + tol
+                            let toleranceEnd = schedule.tolerance_end_time;
+                            if (!toleranceEnd) {
+                              const tolStartMin = timeStringToMinutes(toleranceStart);
+                              const tol = schedule.late_tolerance_minutes || 0;
+                              toleranceEnd = minutesToTimeString(tolStartMin + tol);
+                            }
+                            
+                            return (
+                              <>
+                                <div>
+                                  <span className="block text-[11px] text-slate-500 mb-1">Dari</span>
+                                  <input
+                                    type="time"
+                                    value={toleranceStart}
+                                    onChange={(e) => {
+                                      handleUpdateSchedule(schedule.id, 'tolerance_start_time', e.target.value);
+                                    }}
+                                    disabled={!schedule.is_active}
+                                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                  />
+                                </div>
+                                <div>
+                                  <span className="block text-[11px] text-slate-500 mb-1">Sampai</span>
+                                  <input
+                                    type="time"
+                                    value={toleranceEnd}
+                                    onChange={(e) => {
+                                      handleUpdateSchedule(schedule.id, 'tolerance_end_time', e.target.value);
+                                    }}
+                                    disabled={!schedule.is_active}
+                                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                  />
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                        
+                      </div>
+
+                      {/* Jam Pulang */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">Jam Pulang</label>
+                        <div>
+                          <span className="block text-[11px] text-slate-500 mb-1">Default</span>
+                          <input
+                            type="time"
+                            value={schedule.end_time}
+                            onChange={(e) => handleUpdateSchedule(schedule.id, 'end_time', e.target.value)}
+                            disabled={!schedule.is_active}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -315,10 +559,10 @@ export default function SchedulePolicyPage() {
             <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-blue-700 text-sm flex items-start gap-2">
                 <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1 a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                 </svg>
                 <span>
-                  Jadwal ini akan digunakan untuk menghitung keterlambatan dan lembur karyawan. Pastikan jam kerja sudah benar sebelum disimpan.
+                  <strong>Jadwal & Toleransi:</strong> Sistem akan otomatis menandai karyawan sebagai "terlambat" jika check-in melebihi toleransi yang ditentukan. Contoh: Jam masuk 09:00 dengan toleransi 15 menit = status "late" jika check-in di atas 09:15.
                 </span>
               </p>
             </div>
@@ -358,14 +602,29 @@ export default function SchedulePolicyPage() {
                         <span>{formatDate(holiday.date)}</span>
                       </p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteHoliday(holiday.id)}
-                      className="p-2 hover:bg-red-100 rounded-lg transition-all text-red-600 flex-shrink-0"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingHoliday(holiday);
+                          setShowEditHolidayModal(true);
+                        }}
+                        className="p-2 hover:bg-blue-100 rounded-lg transition-all text-blue-600 flex-shrink-0"
+                        title="Edit"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteHoliday(holiday.id)}
+                        className="p-2 hover:bg-red-100 rounded-lg transition-all text-red-600 flex-shrink-0"
+                        title="Hapus"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border ${
                     holiday.type === 'national' 
@@ -419,16 +678,31 @@ export default function SchedulePolicyPage() {
                           <span>{policy.category === 'attendance' ? 'Absensi' : policy.category === 'leave' ? 'Cuti' : 'Umum'}</span>
                         </span>
                       </div>
-                      <p className="text-slate-600 text-sm leading-relaxed">{policy.description}</p>
+                      <p className="text-slate-600 text-sm leading-relaxed text-justify">{policy.description}</p>
                     </div>
-                    <button
-                      onClick={() => handleDeletePolicy(policy.id)}
-                      className="p-2 hover:bg-red-100 rounded-lg transition-all text-red-600 flex-shrink-0"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingPolicy(policy);
+                          setShowEditPolicyModal(true);
+                        }}
+                        className="p-2 hover:bg-blue-100 rounded-lg transition-all text-blue-600 flex-shrink-0"
+                        title="Edit"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
-                    </button>
+                      </button>
+                      <button
+                        onClick={() => handleDeletePolicy(policy.id)}
+                        className="p-2 hover:bg-red-100 rounded-lg transition-all text-red-600 flex-shrink-0"
+                        title="Hapus"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -437,6 +711,443 @@ export default function SchedulePolicyPage() {
         )}
         </div>
       </main>
+
+      {/* Add Holiday Modal */}
+      {showAddHolidayModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Tambah Hari Libur
+                </h3>
+                <button
+                  onClick={() => setShowAddHolidayModal(false)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handleAddHoliday({
+                name: formData.get('name') as string,
+                date: formData.get('date') as string,
+                type: formData.get('type') as string,
+                description: formData.get('description') as string,
+              });
+            }} className="p-6 space-y-5">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Nama Hari Libur <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  placeholder="e.g., Tahun Baru 2026"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/50 transition-all"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Tanggal <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  name="date"
+                  required
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/50 transition-all"
+                />
+              </div>
+
+              {/* Type */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Tipe <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="type"
+                  required
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/50 transition-all"
+                >
+                  <option value="national">Libur Nasional</option>
+                  <option value="company">Libur Perusahaan</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Deskripsi (Optional)
+                </label>
+                <textarea
+                  name="description"
+                  rows={3}
+                  placeholder="e.g., Hari libur nasional..."
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/50 transition-all resize-none"
+                ></textarea>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddHolidayModal(false)}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all shadow-md hover:shadow-lg"
+                >
+                  Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Holiday Modal */}
+      {showEditHolidayModal && editingHoliday && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit Hari Libur
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowEditHolidayModal(false);
+                    setEditingHoliday(null);
+                  }}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handleEditHoliday({
+                id: editingHoliday.id,
+                name: formData.get('name') as string,
+                date: formData.get('date') as string,
+                type: formData.get('type') as string,
+                description: formData.get('description') as string,
+              });
+            }} className="p-6 space-y-5">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Nama Hari Libur <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  defaultValue={editingHoliday.name}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Tanggal <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  name="date"
+                  required
+                  defaultValue={editingHoliday.date}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                />
+              </div>
+
+              {/* Type */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Tipe <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="type"
+                  required
+                  defaultValue={editingHoliday.type}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                >
+                  <option value="national">Libur Nasional</option>
+                  <option value="company">Libur Perusahaan</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Deskripsi (Optional)
+                </label>
+                <textarea
+                  name="description"
+                  rows={3}
+                  defaultValue={editingHoliday.description || ''}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
+                ></textarea>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditHolidayModal(false);
+                    setEditingHoliday(null);
+                  }}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-semibold transition-all shadow-md hover:shadow-lg"
+                >
+                  Update
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Policy Modal */}
+      {showAddPolicyModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-purple-500 to-pink-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Tambah Kebijakan
+                </h3>
+                <button
+                  onClick={() => setShowAddPolicyModal(false)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handleAddPolicy({
+                title: formData.get('title') as string,
+                description: formData.get('description') as string,
+                category: formData.get('category') as string,
+              });
+            }} className="p-6 space-y-5">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Judul Kebijakan <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="title"
+                  required
+                  placeholder="e.g., Aturan Lembur"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Kategori <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="category"
+                  required
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
+                >
+                  <option value="attendance">Kehadiran</option>
+                  <option value="leave">Cuti & Izin</option>
+                  <option value="general">Umum</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Deskripsi <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  name="description"
+                  required
+                  rows={5}
+                  placeholder="Jelaskan kebijakan ini secara detail..."
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all resize-none"
+                ></textarea>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPolicyModal(false)}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-lg font-semibold transition-all shadow-md hover:shadow-lg"
+                >
+                  Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Policy Modal */}
+      {showEditPolicyModal && editingPolicy && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit Kebijakan
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowEditPolicyModal(false);
+                    setEditingPolicy(null);
+                  }}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handleEditPolicy({
+                id: editingPolicy.id,
+                title: formData.get('title') as string,
+                description: formData.get('description') as string,
+                category: formData.get('category') as string,
+              });
+            }} className="p-6 space-y-5">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Judul Kebijakan <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="title"
+                  required
+                  defaultValue={editingPolicy.title}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Kategori <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="category"
+                  required
+                  defaultValue={editingPolicy.category}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                >
+                  <option value="attendance">Kehadiran</option>
+                  <option value="leave">Cuti & Izin</option>
+                  <option value="general">Umum</option>
+                </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Deskripsi <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  name="description"
+                  required
+                  rows={5}
+                  defaultValue={editingPolicy.description}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
+                ></textarea>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditPolicyModal(false);
+                    setEditingPolicy(null);
+                  }}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-lg font-semibold transition-all shadow-md hover:shadow-lg"
+                >
+                  Update
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

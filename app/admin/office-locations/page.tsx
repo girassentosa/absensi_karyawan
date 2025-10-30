@@ -20,6 +20,9 @@ export default function OfficeLocationsPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [locations, setLocations] = useState<OfficeLocation[]>([]);
   const [loading, setLoading] = useState(true);
+  const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
   const [showModal, setShowModal] = useState(false);
   const [editingLocation, setEditingLocation] = useState<OfficeLocation | null>(null);
   const [formData, setFormData] = useState({
@@ -29,10 +32,13 @@ export default function OfficeLocationsPage() {
     longitude: '',
     radius: '100',
   });
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [defaultGpsRadius, setDefaultGpsRadius] = useState<number>(3000);
+  const [useDefaultRadius, setUseDefaultRadius] = useState<boolean>(true);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    router.push('/admin');
+    router.push('/');
   };
 
   useEffect(() => {
@@ -49,7 +55,22 @@ export default function OfficeLocationsPage() {
     }
 
     fetchLocations();
+    fetchDefaultGpsRadius();
   }, [router]);
+
+  const fetchDefaultGpsRadius = async () => {
+    try {
+      const response = await fetch('/api/system-settings');
+      const data = await response.json();
+      if (data?.success) {
+        const value = parseInt(data.data?.gps_accuracy_radius?.value || '3000');
+        setDefaultGpsRadius(isNaN(value) ? 3000 : value);
+      }
+    } catch (error) {
+      console.error('Error fetching default GPS radius:', error);
+      setDefaultGpsRadius(3000);
+    }
+  };
 
   const fetchLocations = async () => {
     try {
@@ -74,8 +95,9 @@ export default function OfficeLocationsPage() {
       address: '',
       latitude: '',
       longitude: '',
-      radius: '100',
+      radius: String(defaultGpsRadius),
     });
+    setUseDefaultRadius(true);
     setShowModal(true);
   };
 
@@ -88,6 +110,7 @@ export default function OfficeLocationsPage() {
       longitude: location.longitude.toString(),
       radius: location.radius.toString(),
     });
+    setUseDefaultRadius(location.radius === defaultGpsRadius);
     setShowModal(true);
   };
 
@@ -124,6 +147,9 @@ export default function OfficeLocationsPage() {
       
       const method = editingLocation ? 'PUT' : 'POST';
 
+      // New locations default to inactive if there's any active location already
+      const isActiveToSave = editingLocation ? editingLocation.is_active : (activeLocations.length === 0);
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -132,14 +158,27 @@ export default function OfficeLocationsPage() {
           address: formData.address,
           latitude: lat,
           longitude: lng,
-          radius: parseInt(formData.radius),
-          is_active: true,
+          radius: useDefaultRadius ? defaultGpsRadius : parseInt(formData.radius),
+          is_active: isActiveToSave,
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
+        // Safety: ensure newly created location is non-active when there is an existing active location
+        if (!editingLocation && activeLocations.length > 0 && data.data && data.data.id) {
+          try {
+            await fetch(`/api/office-locations/${data.data.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ is_active: false }),
+            });
+          } catch (e) {
+            console.warn('Follow-up deactivation failed, will rely on server payload:', e);
+          }
+        }
+
         alert(editingLocation ? 'Lokasi berhasil diupdate!' : 'Lokasi berhasil ditambahkan!');
         setShowModal(false);
         fetchLocations();
@@ -200,25 +239,98 @@ export default function OfficeLocationsPage() {
     }
   };
 
-  const handleGetCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setFormData({
-            ...formData,
-            latitude: position.coords.latitude.toFixed(6),
-            longitude: position.coords.longitude.toFixed(6),
-          });
-          alert('✅ Koordinat berhasil diambil dari lokasi Anda saat ini!');
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          alert('Gagal mengambil lokasi. Pastikan izin lokasi sudah diberikan.');
+  const getAddressFromCoords = async (lat: number, lng: number): Promise<string> => {
+    try {
+      // OpenStreetMap Nominatim Reverse Geocoding (FREE!)
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'AbsensiPintar/1.0' // Required by Nominatim
         }
-      );
-    } else {
-      alert('Browser Anda tidak mendukung geolocation');
+      });
+      
+      if (!response.ok) {
+        throw new Error('Gagal mendapatkan alamat');
+      }
+      
+      const data = await response.json();
+      
+      // Format alamat yang lebih rapi untuk Indonesia
+      if (data.address) {
+        const parts = [];
+        if (data.address.road) parts.push(data.address.road);
+        if (data.address.house_number) parts.push(`No. ${data.address.house_number}`);
+        if (data.address.suburb || data.address.village) parts.push(data.address.suburb || data.address.village);
+        if (data.address.city || data.address.city_district) parts.push(data.address.city || data.address.city_district);
+        if (data.address.state) parts.push(data.address.state);
+        if (data.address.postcode) parts.push(data.address.postcode);
+        
+        return parts.length > 0 ? parts.join(', ') : data.display_name;
+      }
+      
+      return data.display_name || `${lat}, ${lng}`;
+    } catch (error) {
+      console.error('Error reverse geocoding:', error);
+      return `${lat}, ${lng}`; // Fallback ke koordinat saja
     }
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('❌ Browser Anda tidak mendukung GPS/Geolocation!');
+      return;
+    }
+
+    setIsLoadingLocation(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        // Get address from coordinates using OpenStreetMap
+        const address = await getAddressFromCoords(lat, lng);
+
+        // Auto-fill all fields
+        setFormData({
+          ...formData,
+          address: address,
+          latitude: lat.toFixed(6),
+          longitude: lng.toFixed(6),
+        });
+
+        setIsLoadingLocation(false);
+        alert('✅ Lokasi berhasil terdeteksi!\n\nAlamat: ' + address);
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        setIsLoadingLocation(false);
+        
+        let errorMessage = 'Gagal mendapatkan lokasi. ';
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage += 'Izin lokasi ditolak. Silakan aktifkan izin lokasi di browser.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage += 'Informasi lokasi tidak tersedia. Pastikan GPS aktif.';
+            break;
+          case error.TIMEOUT:
+            errorMessage += 'Waktu permintaan lokasi habis. Coba lagi.';
+            break;
+          default:
+            errorMessage += 'Terjadi kesalahan. Coba lagi.';
+        }
+        
+        alert('❌ ' + errorMessage);
+      },
+      {
+        enableHighAccuracy: true, // Gunakan GPS accuracy tinggi
+        timeout: 10000, // 10 detik timeout
+        maximumAge: 0 // Jangan pakai cache, ambil lokasi fresh
+      }
+    );
   };
 
   const activeLocations = locations.filter(loc => loc.is_active);
@@ -248,15 +360,18 @@ export default function OfficeLocationsPage() {
             {/* Page Title */}
             <div className="flex items-center gap-3 flex-1 lg:flex-none">
               <SidebarToggleButton onClick={() => setIsSidebarOpen(true)} />
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </div>
-                <span>Lokasi Kantor</span>
-              </h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">Lokasi Kantor</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 truncate">{currentDate}</p>
+                </div>
+              </div>
             </div>
 
             {/* Action Buttons */}
@@ -270,15 +385,7 @@ export default function OfficeLocationsPage() {
                 </svg>
                 <span className="hidden sm:inline">Tambah</span>
               </button>
-              <button
-                onClick={handleLogout}
-                className="px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span className="hidden sm:inline">Keluar</span>
-              </button>
+              {/* Logout moved to sidebar */}
             </div>
           </div>
         </div>
@@ -445,6 +552,11 @@ export default function OfficeLocationsPage() {
                 </svg>
               </button>
             </div>
+          {!editingLocation && activeLocations.length > 0 && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm">
+              Lokasi kantor baru akan <strong>disimpan sebagai Nonaktif</strong> karena sudah ada lokasi aktif. Anda bisa mengaktifkannya nanti setelah verifikasi alamat.
+            </div>
+          )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -504,30 +616,69 @@ export default function OfficeLocationsPage() {
               <button
                 type="button"
                 onClick={handleGetCurrentLocation}
-                className="w-full bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100 px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
+                disabled={isLoadingLocation}
+                className={`w-full px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                  isLoadingLocation
+                    ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-md hover:shadow-lg'
+                }`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Gunakan Lokasi Saya Saat Ini
+                {isLoadingLocation ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Mendeteksi Lokasi...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span>📍 Gunakan Lokasi Saya Sekarang</span>
+                  </>
+                )}
               </button>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-2 text-sm">
-                  Radius (meter)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-slate-700 font-semibold text-sm">
+                    Radius (meter)
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={useDefaultRadius}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setUseDefaultRadius(checked);
+                        if (checked) {
+                          setFormData({ ...formData, radius: String(defaultGpsRadius) });
+                        }
+                      }}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Gunakan default dari Settings</span>
+                  </label>
+                </div>
                 <input
                   type="number"
-                  value={formData.radius}
+                  value={useDefaultRadius ? String(defaultGpsRadius) : formData.radius}
                   onChange={(e) => setFormData({ ...formData, radius: e.target.value })}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  disabled={useDefaultRadius}
+                  className={`w-full bg-white border rounded-lg px-4 py-3 text-slate-900 placeholder-slate-400 focus:outline-none transition-all ${
+                    useDefaultRadius
+                      ? 'border-slate-200 text-slate-500 cursor-not-allowed bg-slate-50'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50'
+                  }`}
                   placeholder="100"
-                  min="50"
+                  min="10"
                   max="10000"
                 />
                 <p className="text-slate-500 text-xs mt-1">
-                  Radius default diatur di Settings Admin (GPS Accuracy Radius)
+                  Default saat ini: <span className="font-semibold text-slate-700">{defaultGpsRadius} m</span> (dari Pengaturan → GPS Accuracy Radius)
                 </p>
               </div>
 

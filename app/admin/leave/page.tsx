@@ -32,6 +32,9 @@ export default function LeaveRequestPage() {
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null);
@@ -74,7 +77,7 @@ export default function LeaveRequestPage() {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    router.push('/admin');
+    router.push('/');
   };
 
   const handleApprove = async (id: string) => {
@@ -235,20 +238,14 @@ export default function LeaveRequestPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 truncate">Pengajuan Izin</h2>
+                <div className="flex flex-col min-w-0">
+                  <h2 className="text-base sm:text-lg lg:text-xl font-bold text-slate-900 truncate">Pengajuan Izin</h2>
+                  <p className="text-xs sm:text-sm text-slate-500 truncate">{currentDate}</p>
+                </div>
               </div>
             </div>
 
-            {/* Right: Logout Button */}
-            <button
-              onClick={handleLogout}
-              className="px-3 sm:px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg text-red-600 hover:text-red-700 text-sm font-semibold transition-all flex items-center gap-2 flex-shrink-0"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span className="hidden sm:inline">Keluar</span>
-            </button>
+            {/* Logout moved to sidebar */}
           </div>
         </div>
       </header>

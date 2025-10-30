@@ -11,6 +11,10 @@ export default function UserDashboard() {
   const [employee, setEmployee] = useState<any>(null);
   const [todayAttendance, setTodayAttendance] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [todaySchedule, setTodaySchedule] = useState<any>(null);
+  const [isHoliday, setIsHoliday] = useState<boolean>(false);
+  const [activeOffice, setActiveOffice] = useState<any>(null);
+  const [distanceToOffice, setDistanceToOffice] = useState<number | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -27,6 +31,8 @@ export default function UserDashboard() {
 
     setUser(parsedUser);
     fetchEmployeeData(parsedUser.email);
+    fetchTodayScheduleAndHoliday();
+    fetchActiveOffice();
   }, [router]);
 
   const fetchEmployeeData = async (email: string) => {
@@ -56,6 +62,65 @@ export default function UserDashboard() {
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
+    }
+  };
+
+  const fetchTodayScheduleAndHoliday = async () => {
+    try {
+      const wsRes = await fetch('/api/work-schedules');
+      const wsData = await wsRes.json();
+      if (wsData.success) {
+        const dow = new Date().getDay();
+        const schedule = wsData.data.find((d: any) => d.day_of_week === dow);
+        setTodaySchedule(schedule || null);
+      }
+
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const hRes = await fetch(`/api/holidays?date=${todayStr}`);
+      const hData = await hRes.json();
+      setIsHoliday(hData.success && Array.isArray(hData.data) && hData.data.some((h: any) => h.is_active !== false));
+    } catch (e) {
+      console.error('Error fetching schedule/holiday', e);
+    }
+  };
+
+  const haversineDistance = (
+    a: { lat: number; lon: number },
+    b: { lat: number; lon: number }
+  ) => {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lon - a.lon);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+    return Math.round(R * c);
+  };
+
+  const fetchActiveOffice = async () => {
+    try {
+      const res = await fetch('/api/office-locations');
+      const data = await res.json();
+      if (data.success) {
+        const act = (data.data || []).find((l: any) => l.is_active);
+        setActiveOffice(act || null);
+        if (act && navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              setDistanceToOffice(haversineDistance(
+                { lat: pos.coords.latitude, lon: pos.coords.longitude },
+                { lat: act.latitude, lon: act.longitude }
+              ));
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 8000 }
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching office location', e);
     }
   };
 
@@ -104,6 +169,41 @@ export default function UserDashboard() {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Today Banner & Active Office */}
+          <div className="space-y-3 sm:space-y-4 mb-6">
+            {isHoliday ? (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 flex items-start gap-3">
+                <div className="w-8 h-8 bg-red-100 rounded-md flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <p className="text-red-800 text-sm font-semibold">Hari ini adalah hari libur. Absensi dinonaktifkan.</p>
+              </div>
+            ) : todaySchedule ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 flex items-start gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                </div>
+                <p className="text-blue-900 text-sm font-semibold">Hari ini: Jam kerja {todaySchedule?.start_time}–{todaySchedule?.end_time}, toleransi {todaySchedule?.late_tolerance_minutes} menit</p>
+              </div>
+            ) : null}
+
+            {activeOffice && (
+              <div className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-slate-200 flex items-center gap-3">
+                <div className="w-9 h-9 bg-emerald-100 rounded-md flex items-center justify-center">
+                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-slate-500">Lokasi kantor aktif</p>
+                  <p className="text-slate-900 font-semibold truncate">{activeOffice.name}</p>
+                  <p className="text-xs text-slate-500 truncate">{activeOffice.address || `${activeOffice.latitude}, ${activeOffice.longitude}`}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">{distanceToOffice !== null ? `${distanceToOffice} m` : '—'}</p>
+                  <p className="text-xs text-slate-500">Jarak Anda</p>
+                </div>
+              </div>
+            )}
+          </div>
           {/* Welcome Card */}
           {employee && (
             <div className="bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl sm:rounded-2xl p-6 sm:p-8 mb-6 shadow-lg">
