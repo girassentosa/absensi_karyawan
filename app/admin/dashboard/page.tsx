@@ -36,7 +36,6 @@ export default function AdminDashboard() {
     presencePercent: 0,
     avgLateMinutes: 0,
   });
-  const [miniChart, setMiniChart] = useState<{ label: string; percent: number }[]>([]);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const filteredActivities = recentActivities.filter((a: any) => activityFilter === 'all' ? true : a._category === activityFilter);
 
@@ -154,20 +153,41 @@ export default function AdminDashboard() {
         });
 
         // Fetch today's approved leaves to include in activity stream (Asia/Jakarta)
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        // Use consistent timezone handling
+        const now = new Date();
+        const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Jakarta',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const todayStr = jakartaFormatter.format(now);
+        
         try {
           const leaveRes = await fetch(`/api/leave-requests?status=approved&date=${todayStr}`);
           const leaveJson = await leaveRes.json();
-          const lr = (leaveJson?.data || []).map((r: any) => ({ ...r, _category: 'leave' }));
+          const lr = (leaveJson?.data || []).map((r: any) => ({ ...r, _category: 'leave', employee: empMap[r.employee_id] || {} }));
           setLeavesToday(lr);
-          setRecentActivities([...classified, ...lr]
-            .sort((a: any, b: any) => new Date(b.check_in_time || b.created_at).getTime() - new Date(a.check_in_time || a.created_at).getTime())
-            .slice(0, 20));
-        } catch {
+          
+          // Combine and sort all activities consistently
+          const allActivities = [...classified, ...lr];
+          const sorted = allActivities.sort((a: any, b: any) => {
+            const timeA = new Date(a.check_in_time || a.created_at || 0).getTime();
+            const timeB = new Date(b.check_in_time || b.created_at || 0).getTime();
+            return timeB - timeA; // Descending order (newest first)
+          });
+          
+          setRecentActivities(sorted.slice(0, 20));
+        } catch (error) {
+          console.error('Error fetching leaves:', error);
           setLeavesToday([]);
-          setRecentActivities(classified
-            .sort((a: any, b: any) => new Date(b.check_in_time).getTime() - new Date(a.check_in_time).getTime())
-            .slice(0, 20));
+          // Sort classified activities consistently
+          const sorted = classified.sort((a: any, b: any) => {
+            const timeA = new Date(a.check_in_time || 0).getTime();
+            const timeB = new Date(b.check_in_time || 0).getTime();
+            return timeB - timeA; // Descending order (newest first)
+          });
+          setRecentActivities(sorted.slice(0, 20));
         }
       }
     } catch (error) {
@@ -317,6 +337,29 @@ export default function AdminDashboard() {
       const dow = jakartaDate.getDay();
       const todaySch = schedulesData?.data?.find((d: any) => d.day_of_week === dow && d.is_active);
 
+      // Helper functions for Jakarta timezone operations
+      const getJakartaDateStr = (date: Date): string => {
+        return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      };
+      
+      const getJakartaDow = (date: Date): number => {
+        // Get Jakarta date components
+        const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Jakarta',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const parts = jakartaFormatter.formatToParts(date);
+        const year = parseInt(parts.find(p => p.type === 'year')?.value || '0');
+        const month = parseInt(parts.find(p => p.type === 'month')?.value || '0');
+        const day = parseInt(parts.find(p => p.type === 'day')?.value || '0');
+        
+        // Create date object from Jakarta components and get day of week
+        const jakartaDateObj = new Date(year, month - 1, day);
+        return jakartaDateObj.getDay(); // 0=Sunday, 6=Saturday
+      };
+
       const attToday = attTodayData?.data || [];
 
       // Compute onTime / withinTolerance / lateBeyond using flexible time ranges
@@ -352,74 +395,74 @@ export default function AdminDashboard() {
         leaveCount,
       });
 
-      // Weekly KPIs
-      const nowWeek = new Date();
-      const weekAgo = new Date();
-      weekAgo.setDate(nowWeek.getDate() - 6);
+      // Weekly KPIs - use Jakarta timezone consistently
+      const jakartaWeekAgo = new Date(jakartaDate);
+      jakartaWeekAgo.setDate(jakartaWeekAgo.getDate() - 6);
       const histRes = await fetch('/api/attendance/history');
       const histData = await histRes.json();
+      
+      // Filter history: last 7 days in Jakarta timezone
+      const jakartaTodayStr = getJakartaDateStr(jakartaDate);
+      const jakartaWeekAgoStr = getJakartaDateStr(jakartaWeekAgo);
       const history = (histData?.data || []).filter((a: any) => {
-        const d = new Date(a.check_in_time || a.created_at || nowWeek);
-        return d >= new Date(weekAgo.toDateString()) && d <= nowWeek;
+        if (!a.check_in_time) return false;
+        const attDate = new Date(a.check_in_time);
+        const attJakartaStr = getJakartaDateStr(attDate);
+        return attJakartaStr >= jakartaWeekAgoStr && attJakartaStr <= jakartaTodayStr;
       });
 
       // presencePercent: (unique employee-day attendances) / (activeEmployees * workingDaysInRange)
-      // Approx working days: count days in [weekAgo..now] where schedule active and not holiday (skip holiday fetch for simplicity)
-      const days: Date[] = [];
-      for (let i = 0; i < 7; i++) { const d = new Date(weekAgo); d.setDate(weekAgo.getDate() + i); days.push(d); }
-      const workingDays = days.filter((d) => {
-        const dow = d.getDay();
-        return schedulesData?.data?.some((s: any) => s.day_of_week === dow && s.is_active);
-      }).length || 1;
+      // Count working days in Jakarta timezone
+      const workingDaysList: string[] = [];
+      let dayCursor = new Date(jakartaWeekAgo);
+      while (dayCursor <= jakartaDate) {
+        const dayStr = getJakartaDateStr(dayCursor);
+        const dayDow = getJakartaDow(dayCursor);
+        const isWorking = schedulesData?.data?.some((s: any) => s.day_of_week === dayDow && s.is_active);
+        if (isWorking) workingDaysList.push(dayStr);
+        dayCursor.setDate(dayCursor.getDate() + 1);
+      }
+      const workingDays = workingDaysList.length || 1;
 
+      // Use Jakarta date strings for unique employee-day tracking
       const uniqueEmpDay = new Set<string>();
       for (const a of history) {
-        const d = new Date(a.check_in_time || a.created_at);
-        uniqueEmpDay.add(`${a.employee_id}-${d.toDateString()}`);
+        if (!a.check_in_time) continue;
+        const attDate = new Date(a.check_in_time);
+        const attJakartaStr = getJakartaDateStr(attDate);
+        uniqueEmpDay.add(`${a.employee_id}-${attJakartaStr}`);
       }
       const denom = activeEmployees.length * workingDays || 1;
       const presencePercent = Math.max(0, Math.min(100, Math.round((uniqueEmpDay.size / denom) * 100)));
 
-      // avgLateMinutes over week (only positive lateness)
+      // avgLateMinutes over week (only positive lateness) - use Jakarta timezone
       let lateMinsTotal = 0, lateCount = 0;
       for (const a of history) {
         if (!a.check_in_time) continue;
-        const d = new Date(a.check_in_time);
-        const s = schedulesData?.data?.find((x: any) => x.day_of_week === d.getDay() && x.is_active);
+        const attDate = new Date(a.check_in_time);
+        const attDow = getJakartaDow(attDate);
+        const s = schedulesData?.data?.find((x: any) => x.day_of_week === attDow && x.is_active);
         if (!s) continue;
+        
+        // Get check-in time in Jakarta timezone (hours and minutes)
+        const jakartaTimeFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Jakarta',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        const timeParts = jakartaTimeFormatter.formatToParts(attDate);
+        const attHour = parseInt(timeParts.find(p => p.type === 'hour')?.value || '0');
+        const attMinute = parseInt(timeParts.find(p => p.type === 'minute')?.value || '0');
+        const ciMin = attHour * 60 + attMinute;
+        
         const sMin = parseTimeToMinutes(s.start_time) || 0;
-        const ciMin = d.getHours() * 60 + d.getMinutes();
         const diff = ciMin - sMin;
         if (diff > 0) { lateMinsTotal += diff; lateCount++; }
       }
       const avgLateMinutes = lateCount ? Math.round(lateMinsTotal / lateCount) : 0;
 
       setKpiWeek({ presencePercent, avgLateMinutes });
-
-      // Build last 5 working-day mini chart (Mon-Fri style using active schedule days)
-      const labelsMap = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-      const lastDays: { date: Date; dow: number }[] = [];
-      let cursor = new Date(now);
-      while (lastDays.length < 5) {
-        const d = new Date(cursor);
-        const dow = d.getDay();
-        const isWorking = schedulesData?.data?.some((s: any) => s.day_of_week === dow && s.is_active);
-        if (isWorking) {
-          lastDays.unshift({ date: new Date(d.getFullYear(), d.getMonth(), d.getDate()), dow });
-        }
-        cursor.setDate(cursor.getDate() - 1);
-        if (lastDays.length < 5 && (now.getTime() - cursor.getTime()) > 14 * 24 * 60 * 60 * 1000) break; // safety bound
-      }
-
-      const chart: { label: string; percent: number }[] = lastDays.map(({ date, dow }) => {
-        const attCount = history.filter((a: any) => {
-          const ad = new Date(a.check_in_time || a.created_at || now);
-          return ad.toDateString() === date.toDateString();
-        }).length;
-        const percent = activeEmployees.length ? Math.round((attCount / activeEmployees.length) * 100) : 0;
-        return { label: labelsMap[dow], percent: Math.max(0, Math.min(100, percent)) };
-      });
-      setMiniChart(chart);
     } catch (e) {
       console.error('Error computing KPIs', e);
       setToast({ type: 'error', message: 'Gagal menghitung KPI' });
@@ -536,8 +579,8 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Weekly KPI + Mini Chart side by side */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+            {/* Weekly KPI */}
+            <div className="grid grid-cols-1 gap-3 sm:gap-4">
               {/* Card: KPI Mingguan */}
               <div className={`bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-slate-200 transition-all group ${loadingDashboard ? 'animate-pulse' : 'hover:shadow-md'}`}>
                 <div className="flex items-center gap-3 mb-2">
@@ -550,33 +593,11 @@ export default function AdminDashboard() {
                     <p className="text-slate-500 text-xs font-medium">Kehadiran Minggu Ini</p>
                     <p className="text-xl sm:text-2xl font-bold text-slate-900">{loadingDashboard ? '—' : `${kpiWeek.presencePercent}%`}</p>
                   </div>
-        </div>
+                </div>
                 <div className="pt-2 border-t border-slate-100">
                   <p className="text-xs text-slate-500">Rata-rata Telat: <span className="font-semibold text-slate-700">{loadingDashboard ? '—' : `${kpiWeek.avgLateMinutes} menit`}</span></p>
                 </div>
               </div>
-
-              {/* Card: Statistik Kehadiran (5 Hari) */}
-              {miniChart.length > 0 && (
-                <div className="bg-white rounded-lg sm:rounded-xl p-4 shadow-sm border border-slate-200">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-bold text-slate-900">Statistik Kehadiran (5 Hari Kerja)</h3>
-                    <span className="text-xs text-slate-500">Persentase hadir</span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-3 items-end h-40">
-                    {miniChart.map((d, idx) => (
-                      <div key={idx} className="flex flex-col items-center gap-1">
-                        <div className="w-full bg-slate-100 rounded-lg overflow-hidden h-full flex items-end">
-                          <div className="w-full bg-gradient-to-t from-blue-600 to-indigo-500 rounded-lg relative" style={{ height: `${d.percent}%` }}>
-                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-900 bg-white/80 backdrop-blur px-1.5 py-0.5 rounded">{d.percent}%</span>
-                          </div>
-                        </div>
-                        <span className="text-xs font-semibold text-slate-700">{d.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -679,7 +700,7 @@ export default function AdminDashboard() {
                     ))}
                   </div>
                 </div>
-                <div className={`space-y-2 sm:space-y-2.5 ${filteredActivities.length > 5 ? 'max-h-[360px] sm:max-h-[400px] overflow-y-auto custom-scrollbar' : ''}`}>
+                <div className="space-y-2 sm:space-y-2.5 max-h-[360px] sm:max-h-[400px] overflow-y-auto custom-scrollbar">
                   {filteredActivities.length > 0 ? (
                     filteredActivities.map((activity: any, index: number) => (
                       <div key={index} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-all border border-slate-100">
