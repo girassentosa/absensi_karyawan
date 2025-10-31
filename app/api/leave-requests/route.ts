@@ -4,6 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+// Force dynamic rendering - no caching for real-time data
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   try {
     const supabaseServer = createClient(supabaseUrl, supabaseServiceKey);
@@ -12,6 +16,7 @@ export async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employee_id');
     const status = searchParams.get('status');
     const userId = searchParams.get('user_id');
+    const date = searchParams.get('date'); // Filter for specific date (YYYY-MM-DD)
 
     // Base query with employee and admin info
     let query = supabaseServer
@@ -62,6 +67,11 @@ export async function GET(request: NextRequest) {
     // Filter by status if provided
     if (status && status !== 'all') {
       query = query.eq('status', status);
+    }
+
+    // Filter by date if provided (check if date falls within start_date and end_date range)
+    if (date) {
+      query = query.lte('start_date', date).gte('end_date', date);
     }
 
     const { data, error } = await query;

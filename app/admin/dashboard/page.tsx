@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -36,6 +37,7 @@ export default function AdminDashboard() {
     presencePercent: 0,
     avgLateMinutes: 0,
   });
+  const [weeklyTrend, setWeeklyTrend] = useState<any[]>([]);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const filteredActivities = recentActivities.filter((a: any) => activityFilter === 'all' ? true : a._category === activityFilter);
 
@@ -128,6 +130,7 @@ export default function AdminDashboard() {
           };
         });
         setTodayEmployees(employeesWithAttendance.slice(0, 8));
+        console.log('fetchDashboardData: Set todayEmployees count:', employeesWithAttendance.slice(0, 8).length);
 
         // Build activity list with classification and employee info
         let todayScheduleLocal: any = null;
@@ -152,8 +155,8 @@ export default function AdminDashboard() {
           return { ...a, employee: emp, _category: category };
         });
 
-        // Fetch today's approved leaves to include in activity stream (Asia/Jakarta)
-        // Use consistent timezone handling
+        // Fetch leave requests that START today (consistent with attendance - reset daily)
+        // Remove status filter to show pending, approved, and rejected leaves
         const now = new Date();
         const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
           timeZone: 'Asia/Jakarta',
@@ -164,10 +167,17 @@ export default function AdminDashboard() {
         const todayStr = jakartaFormatter.format(now);
         
         try {
-          const leaveRes = await fetch(`/api/leave-requests?status=approved&date=${todayStr}`);
+          const leaveRes = await fetch(`/api/leave-requests`);
           const leaveJson = await leaveRes.json();
-          const lr = (leaveJson?.data || []).map((r: any) => ({ ...r, _category: 'leave', employee: empMap[r.employee_id] || {} }));
+          // Filter: only leaves that START today (reset per hari seperti attendance)
+          const lr = (leaveJson?.data || [])
+            .filter((r: any) => {
+              const startDate = new Date(r.start_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+              return startDate === todayStr;
+            })
+            .map((r: any) => ({ ...r, _category: 'leave', employee: empMap[r.employee_id] || {} }));
           setLeavesToday(lr);
+          console.log('fetchDashboardData: Leave requests starting today:', lr.length, '(todayStr:', todayStr, ')');
           
           // Combine and sort all activities consistently
           const allActivities = [...classified, ...lr];
@@ -178,8 +188,9 @@ export default function AdminDashboard() {
           });
           
           setRecentActivities(sorted.slice(0, 20));
+          console.log('fetchDashboardData: Recent activities count:', sorted.slice(0, 20).length, '(attendance:', classified.length, '+ leaves:', lr.length, ')');
         } catch (error) {
-          console.error('Error fetching leaves:', error);
+          console.error('fetchDashboardData: Error fetching leaves:', error);
           setLeavesToday([]);
           // Sort classified activities consistently
           const sorted = classified.sort((a: any, b: any) => {
@@ -188,6 +199,7 @@ export default function AdminDashboard() {
             return timeB - timeA; // Descending order (newest first)
           });
           setRecentActivities(sorted.slice(0, 20));
+          console.log('fetchDashboardData: Recent activities count (no leaves):', sorted.slice(0, 20).length);
         }
       }
     } catch (error) {
@@ -364,28 +376,54 @@ export default function AdminDashboard() {
 
       // Compute onTime / withinTolerance / lateBeyond using flexible time ranges
       let onTime = 0, withinTol = 0, beyondTol = 0;
+      
+      // Debug logging
+      if (!todaySch) {
+        console.warn('fetchKpis: No schedule found for today (day of week:', dow, ')');
+      }
+      if (attToday.length === 0) {
+        console.warn('fetchKpis: No attendance records found for today');
+      }
+      
       for (const a of attToday) {
-        if (!a.check_in_time || !todaySch) continue;
+        if (!a.check_in_time) {
+          console.warn('fetchKpis: Attendance record without check_in_time:', a.id);
+          continue;
+        }
+        if (!todaySch) continue;
+        
         const category = classifyAttendanceTime(new Date(a.check_in_time), todaySch);
         if (category === 'onTime') onTime++;
         else if (category === 'within') withinTol++;
         else beyondTol++;
       }
 
-      // Leave requests today (approved) - local Asia/Jakarta
+      // Leave requests that START today (consistent with attendance logic - reset daily)
+      // For multi-day leaves, only count on the start_date
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      const leaveRes = await fetch(`/api/leave-requests?status=approved&date=${todayStr}`);
+      const leaveRes = await fetch(`/api/leave-requests`);
       let leaveCount = 0;
       try {
         const leaveData = await leaveRes.json();
+        // Filter: only count leaves that START today (reset per hari seperti attendance)
         const lr = (leaveData?.data || []).filter((r: any) => {
-          const sd = new Date(r.start_date);
-          const ed = new Date(r.end_date);
-          const t = new Date(todayStr);
-          return (t >= sd && t < ed) || isSameDay(t, sd) || isSameDay(t, ed);
+          const startDate = new Date(r.start_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          return startDate === todayStr;
         });
         leaveCount = lr.length;
-      } catch {}
+        console.log('fetchKpis: Leave requests starting today:', leaveCount, '(todayStr:', todayStr, ')');
+      } catch (err) {
+        console.error('Error fetching leave requests in fetchKpis:', err);
+      }
+      
+      console.log('fetchKpis results:', { 
+        totalAttendance: attToday.length, 
+        onTime, 
+        withinTol, 
+        beyondTol, 
+        leaveCount,
+        hasTodaySchedule: !!todaySch 
+      });
 
       setKpiToday({
         present: attToday.length,
@@ -463,6 +501,55 @@ export default function AdminDashboard() {
       const avgLateMinutes = lateCount ? Math.round(lateMinsTotal / lateCount) : 0;
 
       setKpiWeek({ presencePercent, avgLateMinutes });
+
+      // Build weekly trend data (last 7 days)
+      const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+      const trendData: any[] = [];
+      
+      for (let i = 6; i >= 0; i--) {
+        const targetDate = new Date(jakartaDate);
+        targetDate.setDate(targetDate.getDate() - i);
+        const targetDateStr = getJakartaDateStr(targetDate);
+        const targetDow = getJakartaDow(targetDate);
+        const dayName = dayNames[targetDow];
+        
+        // Check if it's a working day
+        const isWorkingDay = schedulesData?.data?.some((s: any) => s.day_of_week === targetDow && s.is_active);
+        
+        if (isWorkingDay) {
+          // Count attendance for this day
+          const dayAttendance = history.filter((a: any) => {
+            if (!a.check_in_time) return false;
+            const attDate = new Date(a.check_in_time);
+            const attDateStr = getJakartaDateStr(attDate);
+            return attDateStr === targetDateStr;
+          });
+          
+          const totalEmp = activeEmployees.length;
+          const presentCount = dayAttendance.length;
+          const percentage = totalEmp > 0 ? Math.round((presentCount / totalEmp) * 100) : 0;
+          
+          trendData.push({
+            day: dayName,
+            date: targetDateStr,
+            hadir: presentCount,
+            total: totalEmp,
+            percentage,
+          });
+        } else {
+          // Holiday or non-working day
+          trendData.push({
+            day: dayName,
+            date: targetDateStr,
+            hadir: 0,
+            total: 0,
+            percentage: 0,
+            isHoliday: true,
+          });
+        }
+      }
+      
+      setWeeklyTrend(trendData);
     } catch (e) {
       console.error('Error computing KPIs', e);
       setToast({ type: 'error', message: 'Gagal menghitung KPI' });
@@ -574,13 +661,13 @@ export default function AdminDashboard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-slate-500 text-xs font-medium">Absensi Hari Ini</p>
                     <p className="text-xl sm:text-2xl font-bold text-slate-900">{loadingDashboard ? '—' : kpiToday.present}</p>
-                  </div>
+        </div>
                 </div>
               </div>
             </div>
 
-            {/* Weekly KPI */}
-            <div className="grid grid-cols-1 gap-3 sm:gap-4">
+            {/* Weekly KPI & Donut Chart - 2 Columns */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
               {/* Card: KPI Mingguan */}
               <div className={`bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-slate-200 transition-all group ${loadingDashboard ? 'animate-pulse' : 'hover:shadow-md'}`}>
                 <div className="flex items-center gap-3 mb-2">
@@ -598,25 +685,143 @@ export default function AdminDashboard() {
                   <p className="text-xs text-slate-500">Rata-rata Telat: <span className="font-semibold text-slate-700">{loadingDashboard ? '—' : `${kpiWeek.avgLateMinutes} menit`}</span></p>
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              {[
-                { title: 'Tepat Waktu', value: loadingDashboard ? '—' : kpiToday.onTime, color: 'from-green-500 to-emerald-600' },
-                { title: 'Dalam Toleransi', value: loadingDashboard ? '—' : kpiToday.withinTolerance, color: 'from-blue-500 to-indigo-600' },
-                { title: 'Lewat Toleransi', value: loadingDashboard ? '—' : kpiToday.lateBeyond, color: 'from-amber-500 to-orange-600' },
-                { title: 'Izin Hari Ini', value: loadingDashboard ? '—' : kpiToday.leaveCount, color: 'from-slate-600 to-slate-800' },
-              ].map((k, i) => (
-                <div key={i} className={`bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-slate-200 ${loadingDashboard ? 'animate-pulse' : 'hover:shadow-md transition-all'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 bg-gradient-to-br ${k.color} rounded-lg flex items-center justify-center text-white font-bold`}>{typeof k.value === 'number' ? k.value : '—'}</div>
-                    <div>
-                      <p className="text-xs text-slate-500">Hari Ini</p>
-                      <p className="text-sm font-semibold text-slate-900">{k.title}</p>
-                    </div>
+              {/* Card: Donut Chart - Kehadiran Hari Ini */}
+              <div className={`bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-slate-200 transition-all ${loadingDashboard ? 'animate-pulse' : 'hover:shadow-md'}`}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-500 text-xs font-medium">Distribusi Kehadiran</p>
+                    <p className="text-sm font-semibold text-slate-900">Hari Ini</p>
                   </div>
                 </div>
-              ))}
+                {loadingDashboard ? (
+                  <div className="h-48 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={180}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Tepat Waktu', value: kpiToday.onTime, color: '#10b981' },
+                          { name: 'Dalam Toleransi', value: kpiToday.withinTolerance, color: '#3b82f6' },
+                          { name: 'Lewat Toleransi', value: kpiToday.lateBeyond, color: '#f59e0b' },
+                          { name: 'Izin', value: kpiToday.leaveCount, color: '#64748b' },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {[
+                          { name: 'Tepat Waktu', value: kpiToday.onTime, color: '#10b981' },
+                          { name: 'Dalam Toleransi', value: kpiToday.withinTolerance, color: '#3b82f6' },
+                          { name: 'Lewat Toleransi', value: kpiToday.lateBeyond, color: '#f59e0b' },
+                          { name: 'Izin', value: kpiToday.leaveCount, color: '#64748b' },
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#fff', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '8px',
+                          fontSize: '12px'
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+                <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                    <span className="text-slate-600">Tepat Waktu: <b>{kpiToday.onTime}</b></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                    <span className="text-slate-600">Toleransi: <b>{kpiToday.withinTolerance}</b></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
+                    <span className="text-slate-600">Lewat: <b>{kpiToday.lateBeyond}</b></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+                    <span className="text-slate-600">Izin: <b>{kpiToday.leaveCount}</b></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bar Chart - Tren 7 Hari Terakhir */}
+            <div className={`bg-white rounded-lg sm:rounded-xl p-3 sm:p-4 shadow-sm border border-slate-200 transition-all ${loadingDashboard ? 'animate-pulse' : 'hover:shadow-md'}`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-500 text-xs font-medium">Tren Kehadiran</p>
+                  <p className="text-sm font-semibold text-slate-900">7 Hari Terakhir</p>
+                </div>
+              </div>
+              {loadingDashboard ? (
+                <div className="h-56 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={weeklyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis 
+                      dataKey="day" 
+                      tick={{ fontSize: 12, fill: '#64748b' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12, fill: '#64748b' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        border: '1px solid #e2e8f0', 
+                        borderRadius: '8px',
+                        fontSize: '12px'
+                      }}
+                      formatter={(value: any, name: any, props: any) => {
+                        if (props.payload.isHoliday) return ['Libur', ''];
+                        return [`${value} dari ${props.payload.total} (${props.payload.percentage}%)`, 'Hadir'];
+                      }}
+                    />
+                    <Legend 
+                      wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}
+                      formatter={() => 'Kehadiran'}
+                    />
+                    <Bar 
+                      dataKey="hadir" 
+                      fill="url(#colorGradient)" 
+                      radius={[8, 8, 0, 0]}
+                      name="Hadir"
+                    />
+                    <defs>
+                      <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/>
+                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0.8}/>
+                      </linearGradient>
+                    </defs>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Karyawan Hari Ini & Aktivitas Terbaru - 2 Kolom Desktop */}
@@ -719,14 +924,30 @@ export default function AdminDashboard() {
                         </div>
                         {/* Right: time + badge */}
                         <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto">
-                          <span className="text-xs text-slate-600 font-semibold">{activity.check_in_time ? formatTime(activity.check_in_time) : '-'}</span>
+                          <span className="text-xs text-slate-600 font-semibold">
+                            {activity._category === 'leave' ? (activity.created_at ? formatTime(activity.created_at) : '-') : (activity.check_in_time ? formatTime(activity.check_in_time) : '-')}
+                          </span>
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
                             activity._category === 'onTime' ? 'bg-green-100 text-green-700' :
                             activity._category === 'within' ? 'bg-blue-100 text-blue-700' :
                             activity._category === 'beyond' ? 'bg-amber-100 text-amber-700' :
+                            activity._category === 'leave' ? (
+                              activity.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                              activity.status === 'approved' ? 'bg-green-100 text-green-700' :
+                              activity.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                              'bg-slate-100 text-slate-700'
+                            ) :
                             'bg-slate-100 text-slate-700'
                           }`}>
-                            {activity._category === 'onTime' ? 'Tepat Waktu' : activity._category === 'within' ? 'Dalam Toleransi' : activity._category === 'beyond' ? 'Lewat Toleransi' : 'Izin'}
+                            {activity._category === 'onTime' ? 'Tepat Waktu' : 
+                             activity._category === 'within' ? 'Dalam Toleransi' : 
+                             activity._category === 'beyond' ? 'Lewat Toleransi' : 
+                             activity._category === 'leave' ? (
+                              activity.status === 'pending' ? 'Menunggu Persetujuan' :
+                              activity.status === 'approved' ? 'Izin Disetujui' :
+                              activity.status === 'rejected' ? 'Izin Ditolak' :
+                              'Izin'
+                             ) : 'Izin'}
                           </span>
                         </div>
                       </div>
