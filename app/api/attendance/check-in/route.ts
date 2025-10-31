@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
+// Force dynamic rendering - no caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Helper: Calculate time difference in minutes (time2 - time1)
 function getMinutesDifference(time1: string, time2: string): number {
   const [h1, m1] = time1.split(':').map(Number);
