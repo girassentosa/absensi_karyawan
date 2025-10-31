@@ -175,28 +175,30 @@ body {
   overflow: hidden;
 }
 
-/* Custom scrollbar for light backgrounds */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* Custom scrollbar for light backgrounds - moved to @layer to ensure it's preserved in production */
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px !important;
+    height: 6px !important;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 10px;
-}
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f5f9 !important;
+    border-radius: 10px !important;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #3b82f6 0%, #6366f1 100%);
-  border-radius: 10px;
-}
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #3b82f6 0%, #6366f1 100%) !important;
+    border-radius: 10px !important;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #2563eb 0%, #4f46e5 100%);
-}
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #2563eb 0%, #4f46e5 100%) !important;
+  }
 
-/* For Firefox */
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #3b82f6 #f1f5f9;
+  /* For Firefox */
+  .custom-scrollbar {
+    scrollbar-width: thin !important;
+    scrollbar-color: #3b82f6 #f1f5f9 !important;
+  }
 }
