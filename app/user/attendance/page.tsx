@@ -612,6 +612,12 @@ export default function AttendancePage() {
           trainingScore={verificationResult.trainingScore}
           threshold={verificationResult.threshold}
           actionText={isCheckOut ? 'Lanjutkan Check-out' : 'Lanjutkan Check-in'}
+          employeeData={employee ? {
+            full_name: employee.full_name,
+            employee_code: employee.employee_code,
+            position: employee.position,
+            avatar_url: employee.avatar_url
+          } : undefined}
           onClose={() => {
             setShowResultModal(false);
             setVerificationResult(null);

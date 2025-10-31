@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import * as XLSX from 'xlsx';
 
 interface AttendanceRecord {
   id: string;
@@ -25,9 +28,17 @@ export default function AttendancePage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'today' | 'week' | 'month'>('today');
+  const [filter, setFilter] = useState<'all' | 'today' | 'week' | 'custom'>('today');
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  
+  // Date picker states
+  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
+  const [useMonthFilter, setUseMonthFilter] = useState(false);
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
@@ -40,7 +51,7 @@ export default function AttendancePage() {
   useEffect(() => {
     checkAuth();
     fetchAttendance();
-  }, [filter]);
+  }, [filter, selectedMonth, useMonthFilter]);
 
   const checkAuth = () => {
     const storedUser = localStorage.getItem('user');
@@ -57,30 +68,38 @@ export default function AttendancePage() {
   const fetchAttendance = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/attendance/history');
+      
+      // Build API URL with month filter if enabled
+      let apiUrl = '/api/attendance/history';
+      
+      if (useMonthFilter && selectedMonth) {
+        const month = selectedMonth.getMonth() + 1; // 0-11 to 1-12
+        const year = selectedMonth.getFullYear();
+        apiUrl = `/api/attendance/history?month=${month}&year=${year}`;
+      }
+      
+      const response = await fetch(apiUrl);
       const data = await response.json();
       
       if (data.success) {
         let filteredData = data.data;
         
-        const now = new Date();
-        
-        if (filter === 'today') {
-          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          filteredData = filteredData.filter((record: AttendanceRecord) => {
-            const recordDate = new Date(record.check_in_time);
-            return recordDate >= today;
-          });
-        } else if (filter === 'week') {
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          filteredData = filteredData.filter((record: AttendanceRecord) => {
-            return new Date(record.check_in_time) >= weekAgo;
-          });
-        } else if (filter === 'month') {
-          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          filteredData = filteredData.filter((record: AttendanceRecord) => {
-            return new Date(record.check_in_time) >= monthAgo;
-          });
+        // Additional client-side filtering for quick filters
+        if (!useMonthFilter) {
+          const now = new Date();
+          
+          if (filter === 'today') {
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            filteredData = filteredData.filter((record: AttendanceRecord) => {
+              const recordDate = new Date(record.check_in_time);
+              return recordDate >= today;
+            });
+          } else if (filter === 'week') {
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            filteredData = filteredData.filter((record: AttendanceRecord) => {
+              return new Date(record.check_in_time) >= weekAgo;
+            });
+          }
         }
         
         setAttendance(filteredData);
@@ -90,6 +109,87 @@ export default function AttendancePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Excel export function
+  const handleExportExcel = () => {
+    if (filteredAttendance.length === 0) {
+      alert('Tidak ada data untuk di-export');
+      return;
+    }
+
+    // Prepare data for Excel (use filtered data)
+    const excelData = filteredAttendance.map((record, index) => {
+      const checkIn = formatDateTime(record.check_in_time);
+      const checkOut = record.check_out_time ? formatDateTime(record.check_out_time) : { date: '-', time: '-' };
+      
+      // Calculate duration
+      let duration = '-';
+      if (record.check_out_time) {
+        const start = new Date(record.check_in_time);
+        const end = new Date(record.check_out_time);
+        const diff = end.getTime() - start.getTime();
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        duration = `${hours}h ${minutes}m`;
+      }
+
+      return {
+        'No': index + 1,
+        'NIK': record.employees.employee_code,
+        'Nama Lengkap': record.employees.full_name,
+        'Tanggal': checkIn.date,
+        'Jam Masuk': checkIn.time,
+        'Jam Pulang': checkOut.time,
+        'Durasi Kerja': duration,
+        'Status': record.status || '-',
+      };
+    });
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 5 },  // No
+      { wch: 12 }, // NIK
+      { wch: 25 }, // Nama
+      { wch: 15 }, // Tanggal
+      { wch: 12 }, // Jam Masuk
+      { wch: 12 }, // Jam Pulang
+      { wch: 15 }, // Durasi
+      { wch: 15 }, // Status
+    ];
+
+    // Create workbook
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Laporan Absensi');
+
+    // Generate filename
+    let filename = 'Laporan_Absensi';
+    if (useMonthFilter && selectedMonth) {
+      const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      const monthName = monthNames[selectedMonth.getMonth()];
+      const year = selectedMonth.getFullYear();
+      filename = `Laporan_Absensi_${monthName}_${year}`;
+      
+      // Add search query to filename if exists
+      if (searchQuery) {
+        filename += `_${searchQuery.replace(/\s+/g, '_')}`;
+      }
+    } else {
+      const now = new Date();
+      filename = `Laporan_Absensi_${now.toISOString().split('T')[0]}`;
+      
+      // Add search query to filename if exists
+      if (searchQuery) {
+        filename += `_${searchQuery.replace(/\s+/g, '_')}`;
+      }
+    }
+
+    // Download file
+    XLSX.writeFile(workbook, `${filename}.xlsx`);
   };
 
   const formatDateTime = (dateString: string) => {
@@ -116,12 +216,24 @@ export default function AttendancePage() {
     setShowDetailModal(true);
   };
 
+  // Filter attendance by search query
+  const filteredAttendance = attendance.filter((record) => {
+    if (!searchQuery.trim()) return true; // Show all if no search query
+    
+    const fullName = record.employees?.full_name?.toLowerCase() || '';
+    const employeeCode = record.employees?.employee_code?.toLowerCase() || '';
+    const query = searchQuery.toLowerCase().trim();
+    
+    // Search by name or employee code (NIK)
+    return fullName.includes(query) || employeeCode.includes(query);
+  });
+
   const stats = {
-    total: attendance.length,
-    present: attendance.filter(a => a.status === 'present').length,
-    late: attendance.filter(a => a.status === 'late').length,
-    absent: attendance.filter(a => a.status === 'absent').length,
-    checkOut: attendance.filter(a => a.check_out_time).length,
+    total: filteredAttendance.length,
+    present: filteredAttendance.filter(a => a.status === 'present').length,
+    late: filteredAttendance.filter(a => a.status === 'late').length,
+    absent: filteredAttendance.filter(a => a.status === 'absent').length,
+    checkOut: filteredAttendance.filter(a => a.check_out_time).length,
   };
 
   if (loading) {
@@ -252,68 +364,159 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="mb-6">
+        {/* Filter Tabs & Month Picker */}
+        <div className="mb-6 space-y-4">
+          {/* Quick Filters */}
           <div className="bg-white rounded-xl sm:rounded-2xl p-2 shadow-sm border border-slate-200">
             <div className="grid grid-cols-4 gap-2">
-          <button
-            onClick={() => setFilter('today')}
+              <button
+                onClick={() => { setFilter('today'); setUseMonthFilter(false); setSearchQuery(''); }}
                 className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-              filter === 'today'
+                  filter === 'today' && !useMonthFilter
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            Hari Ini
-          </button>
-          <button
-            onClick={() => setFilter('week')}
+                }`}
+              >
+                Hari Ini
+              </button>
+              <button
+                onClick={() => { setFilter('week'); setUseMonthFilter(false); setSearchQuery(''); }}
                 className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-              filter === 'week'
+                  filter === 'week' && !useMonthFilter
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            7 Hari
-          </button>
-          <button
-            onClick={() => setFilter('month')}
+                }`}
+              >
+                7 Hari
+              </button>
+              <button
+                onClick={() => { setFilter('custom'); setUseMonthFilter(true); }}
                 className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-              filter === 'month'
+                  useMonthFilter
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            30 Hari
-          </button>
-          <button
-            onClick={() => setFilter('all')}
-                className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-              filter === 'all'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            Semua
-          </button>
+                }`}
+              >
+                📅 Per Bulan
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={filteredAttendance.length === 0}
+                className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md hover:shadow-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="hidden sm:inline">Download</span>
+                <span className="sm:hidden">Excel</span>
+              </button>
             </div>
           </div>
+
+          {/* Month Picker & Search */}
+          {useMonthFilter && (
+            <div className="bg-white rounded-xl sm:rounded-2xl p-4 shadow-sm border border-slate-200">
+              <div className="flex flex-col sm:flex-row gap-4">
+                {/* Month Picker */}
+                <div className="flex-1">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    📅 Pilih Bulan & Tahun:
+                  </label>
+                  <DatePicker
+                    selected={selectedMonth}
+                    onChange={(date: Date | null) => date && setSelectedMonth(date)}
+                    dateFormat="MMMM yyyy"
+                    showMonthYearPicker
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+                  />
+                </div>
+
+                {/* Search Input */}
+                <div className="flex-1">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    🔍 Cari Karyawan:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Ketik nama atau NIK karyawan..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-4 py-2.5 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium placeholder:text-slate-400"
+                    />
+                    {searchQuery ? (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                        title="Clear search"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Search Results Info */}
+              {attendance.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  {searchQuery ? (
+                    <p className="text-xs text-slate-600">
+                      📊 Menampilkan <span className="font-bold text-blue-600">{filteredAttendance.length}</span> dari <span className="font-semibold">{attendance.length}</span> data {filteredAttendance.length === 0 && <span className="text-red-600">(tidak ditemukan)</span>}
+                      {filteredAttendance.length > 0 && <span className="text-slate-500"> untuk "{searchQuery}"</span>}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      📊 Menampilkan {attendance.length} data absensi untuk periode yang dipilih
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* Attendance List */}
-          {attendance.length === 0 ? (
+          {filteredAttendance.length === 0 ? (
           <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-slate-200">
             <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                {searchQuery ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                )}
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Tidak Ada Data</h3>
-            <p className="text-slate-500">Belum ada data absensi untuk periode ini</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">
+              {searchQuery ? 'Tidak Ditemukan' : 'Tidak Ada Data'}
+            </h3>
+            <p className="text-slate-500">
+              {searchQuery 
+                ? `Tidak ada hasil untuk "${searchQuery}". Coba kata kunci lain.`
+                : 'Belum ada data absensi untuk periode ini'}
+            </p>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Reset Pencarian
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-3 sm:space-y-4">
-            {attendance.map((record) => {
+            {filteredAttendance.map((record) => {
               const statusInfo = getStatusInfo(record.status);
               const checkIn = formatDateTime(record.check_in_time);
               const checkOut = record.check_out_time ? formatDateTime(record.check_out_time) : null;
