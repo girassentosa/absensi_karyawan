@@ -298,7 +298,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
             <div className="p-4 sm:p-6 lg:p-8 space-y-6">
               {/* Avatar Section */}
               <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl p-4 sm:p-6 border border-slate-200">
-                <h4 className="text-slate-900 font-bold mb-4 text-sm sm:text-base flex items-center gap-2">
+                <h4 className="text-gray-900 font-bold mb-4 text-sm sm:text-base flex items-center gap-2" style={{ color: '#111827' }}>
                   <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -327,7 +327,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
 
                   {/* Input URL */}
                   <div className="flex-1 w-full">
-                    <label className="block text-slate-700 mb-2 text-xs sm:text-sm font-semibold">
+                    <label className="block text-gray-900 mb-2 text-xs sm:text-sm font-semibold">
                       URL Foto
                     </label>
                     <input 
@@ -345,7 +345,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
 
               {/* Account Info */}
               <div className="bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200">
-                <h4 className="text-slate-900 font-bold mb-4 text-sm sm:text-base flex items-center gap-2">
+                <h4 className="text-gray-900 font-bold mb-4 text-sm sm:text-base flex items-center gap-2" style={{ color: '#111827' }}>
                   <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
@@ -354,7 +354,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">Username</label>
+                    <label className="block text-xs sm:text-sm font-semibold text-gray-900 mb-2" style={{ color: '#111827' }}>Username</label>
                     <input 
                       type="text" 
                       value={editProfileFormData.username} 
@@ -364,7 +364,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
                     />
                   </div>
                   <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">Email</label>
+                    <label className="block text-xs sm:text-sm font-semibold text-gray-900 mb-2" style={{ color: '#111827' }}>Email</label>
                     <input 
                       type="email" 
                       value={editProfileFormData.email} 
@@ -378,7 +378,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
 
               {/* Password Section */}
               <div className="bg-amber-50 rounded-xl p-4 sm:p-6 border border-amber-200">
-                <h4 className="text-slate-900 font-bold mb-1 text-sm sm:text-base flex items-center gap-2">
+                <h4 className="text-gray-900 font-bold mb-1 text-sm sm:text-base flex items-center gap-2" style={{ color: '#111827' }}>
                   <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
@@ -388,7 +388,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
                 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">Password Saat Ini</label>
+                    <label className="block text-xs sm:text-sm font-medium text-gray-900 mb-2" style={{ color: '#111827' }}>Password Saat Ini</label>
                     <input 
                       type="password" 
                       value={editProfileFormData.currentPassword} 
@@ -399,7 +399,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">Password Baru</label>
+                      <label className="block text-xs sm:text-sm font-medium text-gray-900 mb-2" style={{ color: '#111827' }}>Password Baru</label>
                       <input 
                         type="password" 
                         value={editProfileFormData.newPassword} 
@@ -409,7 +409,7 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
                       />
                     </div>
                     <div>
-                      <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">Konfirmasi Password</label>
+                      <label className="block text-xs sm:text-sm font-medium text-gray-900 mb-2" style={{ color: '#111827' }}>Konfirmasi Password</label>
                       <input 
                         type="password" 
                         value={editProfileFormData.confirmPassword} 
