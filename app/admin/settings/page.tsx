@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import SuccessNotification from '@/components/SuccessNotification';
+import ErrorNotification from '@/components/ErrorNotification';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -11,6 +13,11 @@ export default function SettingsPage() {
   const [systemSettings, setSystemSettings] = useState({
     faceThreshold: 80,
     gpsRadius: 3000,
+  });
+  const [notification, setNotification] = useState<{ show: boolean; type: 'success' | 'error'; message: string }>({
+    show: false,
+    type: 'success',
+    message: '',
   });
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -67,12 +74,12 @@ export default function SettingsPage() {
       const gpsRadius = systemSettings.gpsRadius || 3000;
       
       if (faceThreshold < 50 || faceThreshold > 100) {
-        alert('Face Recognition Threshold harus antara 50-100%');
+        setNotification({ show: true, type: 'error', message: 'Face Recognition Threshold harus antara 50-100%' });
         return;
       }
       
       if (gpsRadius < 10 || gpsRadius > 10000) {
-        alert('GPS Radius harus antara 10-10000 meter');
+        setNotification({ show: true, type: 'error', message: 'GPS Radius harus antara 10-10000 meter' });
         return;
       }
       
@@ -93,18 +100,17 @@ export default function SettingsPage() {
         gpsRadius: gpsRadius,
       };
       setSystemSettings(validSettings);
-        alert(
-          '✅ Pengaturan berhasil disimpan ke database!\n\n' +
-          'Face Recognition Threshold: ' + faceThreshold + '%\n' +
-          'GPS Accuracy Radius: ' + gpsRadius + ' meter\n\n' +
-          'Pengaturan ini akan berlaku untuk semua karyawan.'
-        );
+        setNotification({
+          show: true,
+          type: 'success',
+          message: `Pengaturan berhasil disimpan!\n\nFace Recognition Threshold: ${faceThreshold}%\nGPS Accuracy Radius: ${gpsRadius} meter\n\nPengaturan ini akan berlaku untuk semua karyawan.`,
+        });
       } else {
-        alert(data.error || 'Gagal menyimpan pengaturan');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menyimpan pengaturan' });
       }
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Gagal menyimpan pengaturan');
+      setNotification({ show: true, type: 'error', message: 'Gagal menyimpan pengaturan' });
     }
   };
 
@@ -322,6 +328,24 @@ export default function SettingsPage() {
         </div>
       </main>
           </div>
+
+      {/* Success Notification */}
+      {notification.type === 'success' && (
+        <SuccessNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'success', message: '' })}
+        />
+      )}
+
+      {/* Error Notification */}
+      {notification.type === 'error' && (
+        <ErrorNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'error', message: '' })}
+        />
+      )}
     </div>
   );
 }

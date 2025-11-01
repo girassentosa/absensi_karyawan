@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import SuccessNotification from '@/components/SuccessNotification';
+import ErrorNotification from '@/components/ErrorNotification';
+import ConfirmationModal from '@/components/ConfirmationModal';
 
 interface OfficeLocation {
   id: string;
@@ -35,6 +38,15 @@ export default function OfficeLocationsPage() {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [defaultGpsRadius, setDefaultGpsRadius] = useState<number>(3000);
   const [useDefaultRadius, setUseDefaultRadius] = useState<boolean>(true);
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    type: 'success' | 'error';
+    message: string;
+  }>({ show: false, type: 'success', message: '' });
+  const [confirmDelete, setConfirmDelete] = useState<{
+    show: boolean;
+    location: OfficeLocation | null;
+  }>({ show: false, location: null });
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -82,7 +94,7 @@ export default function OfficeLocationsPage() {
       }
     } catch (error) {
       console.error('Error fetching locations:', error);
-      alert('Gagal mengambil data lokasi kantor');
+      setNotification({ show: true, type: 'error', message: 'Gagal mengambil data lokasi kantor' });
     } finally {
       setLoading(false);
     }
@@ -118,7 +130,7 @@ export default function OfficeLocationsPage() {
     e.preventDefault();
 
     if (!formData.name || !formData.latitude || !formData.longitude) {
-      alert('Nama, Latitude, dan Longitude harus diisi!');
+      setNotification({ show: true, type: 'error', message: 'Nama, Latitude, dan Longitude harus diisi!' });
       return;
     }
 
@@ -126,17 +138,17 @@ export default function OfficeLocationsPage() {
     const lng = parseFloat(formData.longitude);
 
     if (isNaN(lat) || isNaN(lng)) {
-      alert('Latitude dan Longitude harus berupa angka!');
+      setNotification({ show: true, type: 'error', message: 'Latitude dan Longitude harus berupa angka!' });
       return;
     }
 
     if (lat < -90 || lat > 90) {
-      alert('Latitude harus antara -90 dan 90!');
+      setNotification({ show: true, type: 'error', message: 'Latitude harus antara -90 dan 90!' });
       return;
     }
 
     if (lng < -180 || lng > 180) {
-      alert('Longitude harus antara -180 dan 180!');
+      setNotification({ show: true, type: 'error', message: 'Longitude harus antara -180 dan 180!' });
       return;
     }
 
@@ -179,15 +191,15 @@ export default function OfficeLocationsPage() {
           }
         }
 
-        alert(editingLocation ? 'Lokasi berhasil diupdate!' : 'Lokasi berhasil ditambahkan!');
+        setNotification({ show: true, type: 'success', message: editingLocation ? 'Lokasi berhasil diupdate!' : 'Lokasi berhasil ditambahkan!' });
         setShowModal(false);
         fetchLocations();
       } else {
-        alert(data.error || 'Gagal menyimpan lokasi');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menyimpan lokasi' });
       }
     } catch (error) {
       console.error('Error saving location:', error);
-      alert('Gagal menyimpan lokasi');
+      setNotification({ show: true, type: 'error', message: 'Gagal menyimpan lokasi' });
     }
   };
 
@@ -205,20 +217,24 @@ export default function OfficeLocationsPage() {
       const data = await response.json();
 
       if (data.success) {
+        setNotification({ show: true, type: 'success', message: 'Status lokasi berhasil diubah!' });
         fetchLocations();
       } else {
-        alert(data.error || 'Gagal mengubah status lokasi');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal mengubah status lokasi' });
       }
     } catch (error) {
       console.error('Error toggling location:', error);
-      alert('Gagal mengubah status lokasi');
+      setNotification({ show: true, type: 'error', message: 'Gagal mengubah status lokasi' });
     }
   };
 
-  const handleDelete = async (location: OfficeLocation) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus lokasi "${location.name}"?\n\nData yang dihapus tidak dapat dikembalikan!`)) {
-      return;
-    }
+  const handleDeleteClick = (location: OfficeLocation) => {
+    setConfirmDelete({ show: true, location });
+  };
+
+  const handleDeleteConfirm = async () => {
+    const location = confirmDelete.location;
+    if (!location) return;
 
     try {
       const response = await fetch(`/api/office-locations/${location.id}`, {
@@ -228,14 +244,16 @@ export default function OfficeLocationsPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert('Lokasi berhasil dihapus!');
+        setNotification({ show: true, type: 'success', message: 'Lokasi berhasil dihapus!' });
         fetchLocations();
       } else {
-        alert(data.error || 'Gagal menghapus lokasi');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menghapus lokasi' });
       }
     } catch (error) {
       console.error('Error deleting location:', error);
-      alert('Gagal menghapus lokasi');
+      setNotification({ show: true, type: 'error', message: 'Gagal menghapus lokasi' });
+    } finally {
+      setConfirmDelete({ show: false, location: null });
     }
   };
 
@@ -278,7 +296,7 @@ export default function OfficeLocationsPage() {
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
-      alert('❌ Browser Anda tidak mendukung GPS/Geolocation!');
+      setNotification({ show: true, type: 'error', message: 'Browser Anda tidak mendukung GPS/Geolocation!' });
       return;
     }
 
@@ -301,7 +319,7 @@ export default function OfficeLocationsPage() {
         });
 
         setIsLoadingLocation(false);
-        alert('✅ Lokasi berhasil terdeteksi!\n\nAlamat: ' + address);
+        setNotification({ show: true, type: 'success', message: `Lokasi berhasil terdeteksi! Alamat: ${address}` });
       },
       (error) => {
         console.error('Error getting location:', error);
@@ -323,7 +341,7 @@ export default function OfficeLocationsPage() {
             errorMessage += 'Terjadi kesalahan. Coba lagi.';
         }
         
-        alert('❌ ' + errorMessage);
+        setNotification({ show: true, type: 'error', message: errorMessage });
       },
       {
         enableHighAccuracy: true, // Gunakan GPS accuracy tinggi
@@ -518,7 +536,7 @@ export default function OfficeLocationsPage() {
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(location)}
+                      onClick={() => handleDeleteClick(location)}
                       className="flex-1 lg:flex-none bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all"
                     >
                       Hapus
@@ -700,6 +718,35 @@ export default function OfficeLocationsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmDelete.show && confirmDelete.location && (
+        <ConfirmationModal
+          isOpen={confirmDelete.show}
+          title="Hapus Lokasi?"
+          message={`Apakah Anda yakin ingin menghapus lokasi "${confirmDelete.location.name}"?\n\nData yang dihapus tidak dapat dikembalikan!`}
+          confirmText="Ya, Hapus"
+          cancelText="Batal"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setConfirmDelete({ show: false, location: null })}
+        />
+      )}
+
+      {/* Notifications */}
+      {notification.type === 'success' && (
+        <SuccessNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'success', message: '' })}
+        />
+      )}
+      {notification.type === 'error' && (
+        <ErrorNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'error', message: '' })}
+        />
       )}
       </main>
       </div>

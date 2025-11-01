@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import SuccessNotification from '@/components/SuccessNotification';
+import ErrorNotification from '@/components/ErrorNotification';
 
 interface LeaveRequest {
   id: string;
@@ -41,6 +43,11 @@ export default function LeaveRequestPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    type: 'success' | 'error';
+    message: string;
+  }>({ show: false, type: 'success', message: '' });
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -82,7 +89,7 @@ export default function LeaveRequestPage() {
 
   const handleApprove = async (id: string) => {
     if (!user) {
-      alert('Data admin tidak ditemukan');
+      setNotification({ show: true, type: 'error', message: 'Data admin tidak ditemukan' });
       return;
     }
 
@@ -107,15 +114,15 @@ export default function LeaveRequestPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Pengajuan izin disetujui');
+        setNotification({ show: true, type: 'success', message: 'Pengajuan izin disetujui' });
         await fetchLeaveRequests();
         setShowDetailModal(false);
       } else {
-        alert('❌ Gagal menyetujui: ' + data.message);
+        setNotification({ show: true, type: 'error', message: `Gagal menyetujui: ${data.message}` });
       }
     } catch (error) {
       console.error('Error approving leave request:', error);
-      alert('❌ Terjadi kesalahan');
+      setNotification({ show: true, type: 'error', message: 'Terjadi kesalahan' });
     } finally {
       setLoading(false);
     }
@@ -123,7 +130,7 @@ export default function LeaveRequestPage() {
 
   const handleReject = async (id: string) => {
     if (!user) {
-      alert('Data admin tidak ditemukan');
+      setNotification({ show: true, type: 'error', message: 'Data admin tidak ditemukan' });
       return;
     }
 
@@ -148,15 +155,15 @@ export default function LeaveRequestPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert('❌ Pengajuan izin ditolak');
+        setNotification({ show: true, type: 'success', message: 'Pengajuan izin ditolak' });
         await fetchLeaveRequests();
         setShowDetailModal(false);
       } else {
-        alert('❌ Gagal menolak: ' + data.message);
+        setNotification({ show: true, type: 'error', message: `Gagal menolak: ${data.message}` });
       }
     } catch (error) {
       console.error('Error rejecting leave request:', error);
-      alert('❌ Terjadi kesalahan');
+      setNotification({ show: true, type: 'error', message: 'Terjadi kesalahan' });
     } finally {
       setLoading(false);
     }
@@ -218,6 +225,17 @@ export default function LeaveRequestPage() {
     approved: leaveRequests.filter(r => r.status === 'approved').length,
     rejected: leaveRequests.filter(r => r.status === 'rejected').length,
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Memuat data pengajuan izin...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -693,6 +711,22 @@ export default function LeaveRequestPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Notifications */}
+      {notification.type === 'success' && (
+        <SuccessNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'success', message: '' })}
+        />
+      )}
+      {notification.type === 'error' && (
+        <ErrorNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'error', message: '' })}
+        />
       )}
       </main>
       </div>

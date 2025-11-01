@@ -36,7 +36,8 @@ export default function FaceVerificationCamera({
   const [currentConfidence, setCurrentConfidence] = useState(0);
   const [threshold, setThreshold] = useState<number>(80); // Default threshold
 
-  // Fetch system settings (threshold) on mount - real-time, no cache
+  // Fetch system settings (threshold) fresh every time component mounts (when modal opens)
+  // This ensures threshold is always up-to-date when admin changes settings
   useEffect(() => {
     const fetchSystemSettings = async () => {
       try {
@@ -53,7 +54,7 @@ export default function FaceVerificationCamera({
         if (data.success) {
           const faceThreshold = parseInt(data.data.face_recognition_threshold?.value || '80');
           setThreshold(faceThreshold);
-          console.log('🔧 [VERIFICATION] Loaded threshold from DB:', faceThreshold);
+          console.log('🔧 [VERIFICATION] Loaded threshold from DB (fresh):', faceThreshold);
         }
       } catch (error) {
         console.error('Error fetching system settings:', error);
@@ -61,8 +62,9 @@ export default function FaceVerificationCamera({
       }
     };
 
+    // Fetch threshold immediately when component mounts (modal opens)
     fetchSystemSettings();
-  }, []);
+  }, []); // Empty dependency - fetch every time component mounts
 
   // Effect 1: Initialize camera on mount (run ONCE only!)
   useEffect(() => {
@@ -211,6 +213,29 @@ export default function FaceVerificationCamera({
       return;
     }
 
+    // 🔥 CRITICAL: Fetch threshold fresh RIGHT BEFORE verification starts
+    // This ensures we always use the latest threshold even if admin changed it
+    try {
+      const response = await fetch('/api/system-settings', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        const freshThreshold = parseInt(data.data.face_recognition_threshold?.value || '80');
+        setThreshold(freshThreshold);
+        console.log('🔧 [VERIFICATION] Refreshed threshold before verification:', freshThreshold);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to refresh threshold, using cached value:', threshold);
+      // Continue with cached threshold if refresh fails
+    }
+
     console.log('⚡ [INSTANT VERIFICATION] Starting...');
     setIsVerifying(true);
     setCurrentConfidence(0);
@@ -278,7 +303,8 @@ export default function FaceVerificationCamera({
             });
           }, 100); // 100ms delay to ensure camera LED turns off
         },
-        trainingScore // ⚡ NEW: Pass training score for OPTION 3 adaptive verification!
+        trainingScore, // ⚡ NEW: Pass training score for OPTION 3 adaptive verification!
+        threshold // 🔥 CRITICAL: Pass fresh threshold from component (fetched right before verification)
       );
     } catch (error: any) {
       console.error('❌ Verification error:', error);

@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import SuccessNotification from '@/components/SuccessNotification';
+import ErrorNotification from '@/components/ErrorNotification';
+import ConfirmationModal from '@/components/ConfirmationModal';
 
 interface Employee {
   id: string;
@@ -40,6 +43,15 @@ export default function EmployeesPage() {
     department: '',
     position: '',
   });
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    type: 'success' | 'error';
+    message: string;
+  }>({ show: false, type: 'success', message: '' });
+  const [confirmDelete, setConfirmDelete] = useState<{
+    show: boolean;
+    employee: Employee | null;
+  }>({ show: false, employee: null });
 
   useEffect(() => {
     checkAuth();
@@ -90,13 +102,13 @@ export default function EmployeesPage() {
     e.preventDefault();
     
     if (!formData.password || formData.password.length < 6) {
-      alert('Password minimal 6 karakter!');
+      setNotification({ show: true, type: 'error', message: 'Password minimal 6 karakter!' });
       return;
     }
 
     try {
       if (!formData.username || formData.username.trim() === '') {
-        alert('Username tidak boleh kosong!');
+        setNotification({ show: true, type: 'error', message: 'Username tidak boleh kosong!' });
         return;
       }
 
@@ -117,7 +129,7 @@ export default function EmployeesPage() {
       
       if (!userData.success) {
         const errorMsg = userData.details || userData.error || 'Gagal membuat akun user';
-        alert(errorMsg);
+        setNotification({ show: true, type: 'error', message: errorMsg });
         return;
       }
 
@@ -135,7 +147,7 @@ export default function EmployeesPage() {
 
       const data = await response.json();
       if (data.success) {
-        alert(`Karyawan berhasil ditambahkan!\n\nUsername: ${formData.username}\nEmail: ${formData.email}\nPassword: ${formData.password}\n\nSilakan berikan informasi login ini kepada karyawan.`);
+        setNotification({ show: true, type: 'success', message: 'Karyawan berhasil ditambahkan!' });
         setShowAddModal(false);
         setFormData({
           employee_code: '',
@@ -149,11 +161,11 @@ export default function EmployeesPage() {
         });
         fetchEmployees();
       } else {
-        alert(data.error || 'Gagal menambah karyawan');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menambah karyawan' });
       }
     } catch (error) {
       console.error('Error adding employee:', error);
-      alert('Gagal menambah karyawan');
+      setNotification({ show: true, type: 'error', message: 'Gagal menambah karyawan' });
     }
   };
 
@@ -188,7 +200,7 @@ export default function EmployeesPage() {
 
       const data = await response.json();
       if (data.success) {
-        alert('Karyawan berhasil diupdate!');
+        setNotification({ show: true, type: 'success', message: 'Karyawan berhasil diupdate!' });
         setShowEditModal(false);
         setEditingEmployee(null);
         setFormData({
@@ -203,11 +215,11 @@ export default function EmployeesPage() {
         });
         fetchEmployees();
       } else {
-        alert(data.error || 'Gagal update karyawan');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal update karyawan' });
       }
     } catch (error) {
       console.error('Error updating employee:', error);
-      alert('Gagal update karyawan');
+      setNotification({ show: true, type: 'error', message: 'Gagal update karyawan' });
     }
   };
 
@@ -230,35 +242,33 @@ export default function EmployeesPage() {
 
       const data = await response.json();
       if (data.success) {
-        alert(`✅ Karyawan berhasil di${actionText}!`);
+        setNotification({ show: true, type: 'success', message: `Karyawan berhasil di${actionText}!` });
         fetchEmployees();
       } else {
-        alert(data.error || `Gagal ${actionText} karyawan`);
+        setNotification({ show: true, type: 'error', message: data.error || `Gagal ${actionText} karyawan` });
       }
     } catch (error: any) {
       console.error(`Error toggling employee status:`, error);
-      alert(error.message || `Gagal ${actionText} karyawan`);
+      setNotification({ show: true, type: 'error', message: error.message || `Gagal ${actionText} karyawan` });
     }
   };
 
 
-  const handleDeleteEmployee = async (id: string) => {
+  const handleDeleteClick = (id: string) => {
     const employee = employees.find(emp => emp.id === id);
     if (!employee) {
-      alert('Karyawan tidak ditemukan');
+      setNotification({ show: true, type: 'error', message: 'Karyawan tidak ditemukan' });
       return;
     }
+    setConfirmDelete({ show: true, employee });
+  };
 
-    if (!confirm(`🔴 HAPUS PERMANEN - TIDAK BISA DIBATALKAN!\n\nApakah Anda yakin ingin menghapus PERMANEN karyawan ini?\n\nNama: ${employee.full_name}\nEmail: ${employee.email}\n\n⚠️ DATA AKAN DIHAPUS DARI DATABASE!\n⚠️ Semua riwayat absensi akan TERHAPUS!\n⚠️ User account akan TERHAPUS!\n⚠️ TIDAK BISA dikembalikan!\n✅ Email DAPAT digunakan lagi untuk karyawan baru\n\nKetik konfirmasi untuk melanjutkan.`)) return;
-
-    const confirmText = prompt('Ketik "HAPUS" untuk konfirmasi penghapusan permanen:');
-    if (confirmText !== 'HAPUS') {
-      alert('Penghapusan dibatalkan.');
-      return;
-    }
+  const handleDeleteConfirm = async () => {
+    const employee = confirmDelete.employee;
+    if (!employee) return;
 
     try {
-      const response = await fetch(`/api/employees/${id}`, {
+      const response = await fetch(`/api/employees/${employee.id}`, {
         method: 'DELETE',
       });
 
@@ -269,15 +279,17 @@ export default function EmployeesPage() {
       }
 
       if (data.success) {
-        setEmployees(prevEmployees => prevEmployees.filter(emp => emp.id !== id));
-        alert('✅ Karyawan berhasil dihapus PERMANEN dari database!\n\nData karyawan, user account, dan riwayat absensi telah dihapus.\nEmail dapat digunakan kembali untuk karyawan baru.');
+        setEmployees(prevEmployees => prevEmployees.filter(emp => emp.id !== employee.id));
+        setNotification({ show: true, type: 'success', message: 'Karyawan berhasil dihapus permanen!' });
         fetchEmployees();
       } else {
-        alert(data.error || 'Gagal menghapus karyawan');
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menghapus karyawan' });
       }
     } catch (error: any) {
       console.error('Error deleting employee:', error);
-      alert(error.message || 'Gagal menghapus karyawan. Silakan coba lagi.');
+      setNotification({ show: true, type: 'error', message: error.message || 'Gagal menghapus karyawan. Silakan coba lagi.' });
+    } finally {
+      setConfirmDelete({ show: false, employee: null });
     }
   };
 
@@ -539,7 +551,7 @@ export default function EmployeesPage() {
                         </button>
 
                         <button
-                          onClick={() => handleDeleteEmployee(employee.id)}
+                          onClick={() => handleDeleteClick(employee.id)}
                       className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md text-red-600 hover:text-red-700 text-xs font-semibold transition-all flex items-center justify-center gap-1"
                       title="Hapus Permanen"
                         >
@@ -832,6 +844,36 @@ export default function EmployeesPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmDelete.show && confirmDelete.employee && (
+        <ConfirmationModal
+          isOpen={confirmDelete.show}
+          title="🔴 HAPUS PERMANEN"
+          message={`Apakah Anda yakin ingin menghapus PERMANEN karyawan ini?\n\nNama: ${confirmDelete.employee.full_name}\nEmail: ${confirmDelete.employee.email}`}
+          confirmText="Ya, Hapus Permanen"
+          cancelText="Batal"
+          requireConfirmText="HAPUS"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setConfirmDelete({ show: false, employee: null })}
+        />
+      )}
+
+      {/* Notifications */}
+      {notification.type === 'success' && (
+        <SuccessNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'success', message: '' })}
+        />
+      )}
+      {notification.type === 'error' && (
+        <ErrorNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'error', message: '' })}
+        />
       )}
 
       </div>

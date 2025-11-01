@@ -359,7 +359,8 @@ export async function performInstantVerification(
   storedEncoding: string,
   onProgress: (status: string, confidence: number) => void,
   onComplete: (success: boolean, similarity: number, confidence: number) => void,
-  trainingScore?: number // ← NEW: Training score from DB
+  trainingScore?: number, // ← NEW: Training score from DB
+  thresholdOverride?: number // ← NEW: Threshold override from component (fresh from DB)
 ): Promise<void> {
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`⚡ Starting ADAPTIVE face verification (OPTION 3)`);
@@ -383,24 +384,30 @@ export async function performInstantVerification(
     return;
   }
 
-  // Fetch threshold from API - real-time, no cache
-  let threshold = 80; // default
-  try {
-    const response = await fetch('/api/system-settings', {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
+  // Use threshold from component if provided (already fresh), otherwise fetch from API
+  let threshold = thresholdOverride || 80; // Use override first (fresh from component)
+  
+  if (!thresholdOverride) {
+    // Fallback: Fetch threshold from API if not provided (for backward compatibility)
+    try {
+      const response = await fetch('/api/system-settings', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        threshold = parseInt(data.data.face_recognition_threshold?.value || '80');
+        console.log(`⚙️ Using threshold from database (fallback): ${threshold}%`);
       }
-    });
-    const data = await response.json();
-    if (data.success) {
-      threshold = parseInt(data.data.face_recognition_threshold?.value || '80');
-      console.log(`⚙️ Using threshold from database: ${threshold}%`);
+    } catch (error) {
+      console.log('⚠️ Using default threshold: 80%');
     }
-  } catch (error) {
-    console.log('⚠️ Using default threshold: 80%');
+  } else {
+    console.log(`⚙️ Using threshold from component (fresh): ${threshold}%`);
   }
 
   // ⚡ ADAPTIVE PARAMETERS based on training score

@@ -155,8 +155,8 @@ export default function AdminDashboard() {
           return { ...a, employee: emp, _category: category };
         });
 
-        // Fetch leave requests that START today (consistent with attendance - reset daily)
-        // Remove status filter to show pending, approved, and rejected leaves
+        // Fetch leave requests for recent activities (show all leaves CREATED today, not started today)
+        // This shows real-time activity: new leave requests submitted today
         const now = new Date();
         const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
           timeZone: 'Asia/Jakarta',
@@ -169,15 +169,16 @@ export default function AdminDashboard() {
         try {
           const leaveRes = await fetch(`/api/leave-requests`);
           const leaveJson = await leaveRes.json();
-          // Filter: only leaves that START today (reset per hari seperti attendance)
+          // Filter: only leaves CREATED today (for recent activities - shows new submissions today)
           const lr = (leaveJson?.data || [])
             .filter((r: any) => {
-              const startDate = new Date(r.start_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-              return startDate === todayStr;
+              if (!r.created_at) return false;
+              const createdDate = new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+              return createdDate === todayStr;
             })
             .map((r: any) => ({ ...r, _category: 'leave', employee: empMap[r.employee_id] || {} }));
           setLeavesToday(lr);
-          console.log('fetchDashboardData: Leave requests starting today:', lr.length, '(todayStr:', todayStr, ')');
+          console.log('fetchDashboardData: Leave requests created today:', lr.length, '(todayStr:', todayStr, ')');
           
           // Combine and sort all activities consistently
           const allActivities = [...classified, ...lr];
@@ -398,20 +399,20 @@ export default function AdminDashboard() {
         else beyondTol++;
       }
 
-      // Leave requests that START today (consistent with attendance logic - reset daily)
-      // For multi-day leaves, only count on the start_date
+      // Leave requests CREATED today (consistent with recent activities - shows new submissions today)
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
       const leaveRes = await fetch(`/api/leave-requests`);
       let leaveCount = 0;
       try {
         const leaveData = await leaveRes.json();
-        // Filter: only count leaves that START today (reset per hari seperti attendance)
+        // Filter: only count leaves CREATED today (consistent with recent activities)
         const lr = (leaveData?.data || []).filter((r: any) => {
-          const startDate = new Date(r.start_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-          return startDate === todayStr;
+          if (!r.created_at) return false;
+          const createdDate = new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          return createdDate === todayStr;
         });
         leaveCount = lr.length;
-        console.log('fetchKpis: Leave requests starting today:', leaveCount, '(todayStr:', todayStr, ')');
+        console.log('fetchKpis: Leave requests created today:', leaveCount, '(todayStr:', todayStr, ')');
       } catch (err) {
         console.error('Error fetching leave requests in fetchKpis:', err);
       }
@@ -598,6 +599,17 @@ export default function AdminDashboard() {
     month: 'long',
     day: 'numeric'
   });
+
+  if (loadingDashboard) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Memuat data dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">

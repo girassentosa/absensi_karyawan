@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
+import SuccessNotification from '@/components/SuccessNotification';
+import ErrorNotification from '@/components/ErrorNotification';
 
 interface WorkSchedule {
   id: string;
@@ -65,6 +67,9 @@ export default function SchedulePolicyPage() {
   // Policies State
   const [policies, setPolicies] = useState<Policy[]>([]);
 
+  // Loading State
+  const [loading, setLoading] = useState(true);
+
   const [showAddScheduleModal, setShowAddScheduleModal] = useState(false);
   const [showAddHolidayModal, setShowAddHolidayModal] = useState(false);
   const [showAddPolicyModal, setShowAddPolicyModal] = useState(false);
@@ -72,6 +77,11 @@ export default function SchedulePolicyPage() {
   const [showEditPolicyModal, setShowEditPolicyModal] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
   const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    type: 'success' | 'error';
+    message: string;
+  }>({ show: false, type: 'success', message: '' });
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -92,9 +102,19 @@ export default function SchedulePolicyPage() {
     }
 
     // Fetch data from database
-    fetchWorkSchedules();
-    fetchHolidays();
-    fetchPolicies();
+    (async () => {
+      try {
+        await Promise.all([
+          fetchWorkSchedules(),
+          fetchHolidays(),
+          fetchPolicies(),
+        ]);
+      } catch (error) {
+        console.error('Error fetching schedule data:', error);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [router]);
 
   const fetchWorkSchedules = async () => {
@@ -147,11 +167,11 @@ export default function SchedulePolicyPage() {
           body: JSON.stringify(schedule),
         });
       }
-      alert('✅ Jadwal kerja berhasil disimpan!');
+      setNotification({ show: true, type: 'success', message: 'Jadwal kerja berhasil disimpan!' });
       fetchWorkSchedules();
     } catch (error) {
       console.error('Error saving schedules:', error);
-      alert('❌ Gagal menyimpan jadwal kerja');
+      setNotification({ show: true, type: 'error', message: 'Gagal menyimpan jadwal kerja' });
     }
   };
 
@@ -164,15 +184,15 @@ export default function SchedulePolicyPage() {
       });
       const data = await response.json();
       if (data.success) {
-        alert('✅ Hari libur berhasil ditambahkan!');
+        setNotification({ show: true, type: 'success', message: 'Hari libur berhasil ditambahkan!' });
         fetchHolidays();
         setShowAddHolidayModal(false);
       } else {
-        alert(`❌ ${data.error}`);
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menambahkan hari libur' });
       }
     } catch (error) {
       console.error('Error adding holiday:', error);
-      alert('❌ Gagal menambahkan hari libur');
+      setNotification({ show: true, type: 'error', message: 'Gagal menambahkan hari libur' });
     }
   };
 
@@ -185,16 +205,16 @@ export default function SchedulePolicyPage() {
       });
       const data = await response.json();
       if (data.success) {
-        alert('✅ Hari libur berhasil diupdate!');
+        setNotification({ show: true, type: 'success', message: 'Hari libur berhasil diupdate!' });
         fetchHolidays();
         setShowEditHolidayModal(false);
         setEditingHoliday(null);
       } else {
-        alert(`❌ ${data.error}`);
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal mengupdate hari libur' });
       }
     } catch (error) {
       console.error('Error updating holiday:', error);
-      alert('❌ Gagal mengupdate hari libur');
+      setNotification({ show: true, type: 'error', message: 'Gagal mengupdate hari libur' });
     }
   };
 
@@ -206,14 +226,14 @@ export default function SchedulePolicyPage() {
         });
         const data = await response.json();
         if (data.success) {
-          alert('✅ Hari libur berhasil dihapus!');
+          setNotification({ show: true, type: 'success', message: 'Hari libur berhasil dihapus!' });
           fetchHolidays();
         } else {
-          alert(`❌ ${data.error}`);
+          setNotification({ show: true, type: 'error', message: data.error || 'Gagal menghapus hari libur' });
         }
       } catch (error) {
         console.error('Error deleting holiday:', error);
-        alert('❌ Gagal menghapus hari libur');
+        setNotification({ show: true, type: 'error', message: 'Gagal menghapus hari libur' });
       }
     }
   };
@@ -227,15 +247,15 @@ export default function SchedulePolicyPage() {
       });
       const data = await response.json();
       if (data.success) {
-        alert('✅ Kebijakan berhasil ditambahkan!');
+        setNotification({ show: true, type: 'success', message: 'Kebijakan berhasil ditambahkan!' });
         fetchPolicies();
         setShowAddPolicyModal(false);
       } else {
-        alert(`❌ ${data.error}`);
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal menambahkan kebijakan' });
       }
     } catch (error) {
       console.error('Error adding policy:', error);
-      alert('❌ Gagal menambahkan kebijakan');
+      setNotification({ show: true, type: 'error', message: 'Gagal menambahkan kebijakan' });
     }
   };
 
@@ -248,16 +268,16 @@ export default function SchedulePolicyPage() {
       });
       const data = await response.json();
       if (data.success) {
-        alert('✅ Kebijakan berhasil diupdate!');
+        setNotification({ show: true, type: 'success', message: 'Kebijakan berhasil diupdate!' });
         fetchPolicies();
         setShowEditPolicyModal(false);
         setEditingPolicy(null);
       } else {
-        alert(`❌ ${data.error}`);
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal mengupdate kebijakan' });
       }
     } catch (error) {
       console.error('Error updating policy:', error);
-      alert('❌ Gagal mengupdate kebijakan');
+      setNotification({ show: true, type: 'error', message: 'Gagal mengupdate kebijakan' });
     }
   };
 
@@ -269,14 +289,14 @@ export default function SchedulePolicyPage() {
         });
         const data = await response.json();
         if (data.success) {
-          alert('✅ Kebijakan berhasil dihapus!');
+          setNotification({ show: true, type: 'success', message: 'Kebijakan berhasil dihapus!' });
           fetchPolicies();
         } else {
-          alert(`❌ ${data.error}`);
+          setNotification({ show: true, type: 'error', message: data.error || 'Gagal menghapus kebijakan' });
         }
       } catch (error) {
         console.error('Error deleting policy:', error);
-        alert('❌ Gagal menghapus kebijakan');
+        setNotification({ show: true, type: 'error', message: 'Gagal menghapus kebijakan' });
       }
     }
   };
@@ -285,6 +305,17 @@ export default function SchedulePolicyPage() {
     const date = new Date(dateString);
     return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Memuat data jadwal dan kebijakan...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -1147,6 +1178,22 @@ export default function SchedulePolicyPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Notifications */}
+      {notification.type === 'success' && (
+        <SuccessNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'success', message: '' })}
+        />
+      )}
+      {notification.type === 'error' && (
+        <ErrorNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'error', message: '' })}
+        />
       )}
       </div>
     </div>

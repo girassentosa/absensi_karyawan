@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import SuccessNotification from '@/components/SuccessNotification';
+import ErrorNotification from '@/components/ErrorNotification';
 
 interface AdminSidebarProps {
   isSidebarOpen?: boolean;
@@ -27,6 +29,11 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
+  });
+  const [notification, setNotification] = useState<{ show: boolean; type: 'success' | 'error'; message: string }>({
+    show: false,
+    type: 'success',
+    message: '',
   });
 
   const handleLogout = () => {
@@ -56,12 +63,12 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
       const { username, email, currentPassword, newPassword, confirmPassword, avatarUrl } = editData;
 
       if (newPassword && newPassword !== confirmPassword) {
-        alert('Password baru dan konfirmasi tidak cocok!');
+        setNotification({ show: true, type: 'error', message: 'Password baru dan konfirmasi tidak cocok!' });
         return;
       }
 
       if (newPassword && !currentPassword) {
-        alert('Masukkan password saat ini untuk mengubah password!');
+        setNotification({ show: true, type: 'error', message: 'Masukkan password saat ini untuk mengubah password!' });
         return;
       }
 
@@ -93,17 +100,22 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
         localStorage.setItem('user', JSON.stringify(updatedUser));
         setUser(updatedUser);
         setShowEditModal(false);
+        setIsSidebarOpen(false); // Tutup sidebar mobile setelah simpan (konsisten dengan menu items)
         
+        // Delay kecil agar modal tutup dulu, baru notifikasi muncul
         setTimeout(() => {
-          alert(newPassword ? '✅ Profil dan password berhasil diperbarui!' : '✅ Profil berhasil diperbarui!');
-          window.location.reload();
-        }, 100);
+          setNotification({
+            show: true,
+            type: 'success',
+            message: newPassword ? 'Profil dan password berhasil diperbarui!' : 'Profil berhasil diperbarui!',
+          });
+        }, 200);
       } else {
-        alert('❌ ' + (data.error || 'Gagal memperbarui profil'));
+        setNotification({ show: true, type: 'error', message: data.error || 'Gagal memperbarui profil' });
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Terjadi kesalahan saat memperbarui profil');
+      setNotification({ show: true, type: 'error', message: 'Terjadi kesalahan saat memperbarui profil' });
     }
   };
 
@@ -393,6 +405,24 @@ export default function AdminSidebar({ isSidebarOpen: externalSidebarOpen, setIs
             </div>
           </div>
         </div>
+      )}
+
+      {/* Success Notification */}
+      {notification.type === 'success' && (
+        <SuccessNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'success', message: '' })}
+        />
+      )}
+
+      {/* Error Notification */}
+      {notification.type === 'error' && (
+        <ErrorNotification
+          isOpen={notification.show}
+          message={notification.message}
+          onClose={() => setNotification({ show: false, type: 'error', message: '' })}
+        />
       )}
     </>
   );
