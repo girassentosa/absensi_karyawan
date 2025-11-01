@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
+// Force dynamic rendering (no cache)
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // GET /api/employees - Get all employees or filter by email
 export async function GET(request: NextRequest) {
   try {
