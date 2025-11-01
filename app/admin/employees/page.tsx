@@ -320,15 +320,15 @@ export default function EmployeesPage() {
 
             {/* Right: Action Buttons */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => setShowAddModal(true)}
+            <button
+              onClick={() => setShowAddModal(true)}
                 className="px-3 sm:px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg text-green-600 hover:text-green-700 text-sm font-semibold transition-all flex items-center gap-2"
-              >
+            >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
                 <span className="hidden sm:inline">Tambah</span>
-              </button>
+            </button>
             </div>
           </div>
         </div>
@@ -413,16 +413,16 @@ export default function EmployeesPage() {
             </div>
             <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-2">Belum Ada Karyawan</h3>
             <p className="text-sm sm:text-base text-slate-500 mb-4 sm:mb-6">Mulai dengan menambahkan karyawan pertama</p>
-            <button
+                      <button
               onClick={() => setShowAddModal(true)}
               className="px-5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-md hover:shadow-lg transition-all inline-flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+                  </svg>
               <span>Tambah Karyawan Pertama</span>
-            </button>
-          </div>
+                </button>
+              </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
             {employees.map((employee) => (
@@ -445,12 +445,12 @@ export default function EmployeesPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className="text-sm sm:text-base font-bold text-white truncate">{employee.full_name}</h3>
                         <p className="text-xs text-white/80 truncate">{employee.employee_code}</p>
-                      </div>
-                    </div>
-                    
+            </div>
+        </div>
+
                     {/* Status Badge - Compact */}
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold shadow-sm flex-shrink-0 ${
-                      employee.is_active
+                        employee.is_active
                         ? 'bg-green-500 text-white'
                         : 'bg-red-500 text-white'
                     }`}>
@@ -501,55 +501,55 @@ export default function EmployeesPage() {
 
                     {/* Action Buttons - Compact (3 buttons: Edit, Status, Delete) */}
                   <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    <button
-                      onClick={() => handleEditEmployee(employee)}
+                        <button
+                          onClick={() => handleEditEmployee(employee)}
                       className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md text-blue-600 hover:text-blue-700 text-xs font-semibold transition-all flex items-center justify-center gap-1"
-                      title="Edit Karyawan"
-                    >
+                          title="Edit Karyawan"
+                        >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
                       <span>Edit</span>
-                    </button>
+                        </button>
 
-                    <button
+                        <button
                       onClick={() => handleToggleStatus(employee.id, employee.is_active)}
                       className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1 border ${
-                        employee.is_active
+                            employee.is_active
                           ? 'bg-yellow-50 hover:bg-yellow-100 border-yellow-200 text-yellow-600 hover:text-yellow-700'
                           : 'bg-green-50 hover:bg-green-100 border-green-200 text-green-600 hover:text-green-700'
-                      }`}
-                      title={employee.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                    >
-                      {employee.is_active ? (
+                          }`}
+                          title={employee.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                        >
+                          {employee.is_active ? (
                         <>
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
-                          </svg>
+                            </svg>
                           <span>Off</span>
                         </>
-                      ) : (
+                          ) : (
                         <>
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
                           <span>On</span>
                         </>
-                      )}
-                    </button>
+                          )}
+                        </button>
 
-                    <button
-                      onClick={() => handleDeleteEmployee(employee.id)}
+                        <button
+                          onClick={() => handleDeleteEmployee(employee.id)}
                       className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md text-red-600 hover:text-red-700 text-xs font-semibold transition-all flex items-center justify-center gap-1"
                       title="Hapus Permanen"
-                    >
+                        >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                       <span>Hapus</span>
-                    </button>
-                  </div>
-                </div>
+                        </button>
+                      </div>
+          </div>
               </div>
             ))}
           </div>

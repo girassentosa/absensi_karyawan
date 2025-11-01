@@ -1,11 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar, { SidebarToggleButton } from '@/components/AdminSidebar';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+// Extend jsPDF type to include autoTable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+  }
+}
 
 interface AttendanceRecord {
   id: string;
@@ -16,6 +25,7 @@ interface AttendanceRecord {
   check_in_longitude?: number;
   status: string;
   face_match_score?: number;
+  notes?: string | null;
   employees: {
     full_name: string;
     employee_code: string;
@@ -39,6 +49,13 @@ export default function AttendancePage() {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Download dropdown state
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Schedule data state
+  const [schedules, setSchedules] = useState<any[]>([]);
+  
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
@@ -51,7 +68,38 @@ export default function AttendancePage() {
   useEffect(() => {
     checkAuth();
     fetchAttendance();
+    fetchSchedules();
   }, [filter, selectedMonth, useMonthFilter]);
+
+  // Fetch work schedules
+  const fetchSchedules = async () => {
+    try {
+      const response = await fetch('/api/work-schedules');
+      const data = await response.json();
+      if (data.success) {
+        setSchedules(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching schedules:', error);
+    }
+  };
+
+  // Close download menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(event.target as Node)) {
+        setShowDownloadMenu(false);
+      }
+    };
+
+    if (showDownloadMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDownloadMenu]);
 
   const checkAuth = () => {
     const storedUser = localStorage.getItem('user');
@@ -69,45 +117,384 @@ export default function AttendancePage() {
     try {
       setLoading(true);
       
-      // Build API URL with month filter if enabled
+      // Get current time in Jakarta timezone
+      const now = new Date();
+      const jakartaFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const jakartaParts = jakartaFormatter.formatToParts(now);
+      const jakartaDateObj = {
+        year: parseInt(jakartaParts.find(p => p.type === 'year')?.value || '0'),
+        month: parseInt(jakartaParts.find(p => p.type === 'month')?.value || '0'),
+        day: parseInt(jakartaParts.find(p => p.type === 'day')?.value || '0'),
+        hour: parseInt(jakartaParts.find(p => p.type === 'hour')?.value || '0'),
+        minute: parseInt(jakartaParts.find(p => p.type === 'minute')?.value || '0')
+      };
+      
+      // Build API URL with proper date filtering using Jakarta timezone
       let apiUrl = '/api/attendance/history';
       
       if (useMonthFilter && selectedMonth) {
+        // Per Bulan: use month/year filter
         const month = selectedMonth.getMonth() + 1; // 0-11 to 1-12
         const year = selectedMonth.getFullYear();
         apiUrl = `/api/attendance/history?month=${month}&year=${year}`;
+      } else if (filter === 'today') {
+        // Hari Ini: calculate Jakarta today midnight (UTC)
+        const jakartaTodayMidnightUTC = Date.UTC(
+          jakartaDateObj.year,
+          jakartaDateObj.month - 1,
+          jakartaDateObj.day,
+          0, 0, 0, 0
+        ) - (7 * 60 * 60 * 1000); // Subtract 7 hours for Jakarta UTC offset
+        const jakartaTomorrowMidnightUTC = jakartaTodayMidnightUTC + (24 * 60 * 60 * 1000);
+        
+        const startDate = new Date(jakartaTodayMidnightUTC).toISOString();
+        const endDate = new Date(jakartaTomorrowMidnightUTC).toISOString();
+        apiUrl = `/api/attendance/history?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+      } else if (filter === 'week') {
+        // 7 Hari: calculate Jakarta 7 days ago midnight (UTC)
+        const jakartaTodayMidnightUTC = Date.UTC(
+          jakartaDateObj.year,
+          jakartaDateObj.month - 1,
+          jakartaDateObj.day,
+          0, 0, 0, 0
+        ) - (7 * 60 * 60 * 1000); // Subtract 7 hours for Jakarta UTC offset
+        const jakartaTomorrowMidnightUTC = jakartaTodayMidnightUTC + (24 * 60 * 60 * 1000);
+        const jakartaWeekAgoMidnightUTC = jakartaTodayMidnightUTC - (6 * 24 * 60 * 60 * 1000); // 7 days including today
+        
+        const startDate = new Date(jakartaWeekAgoMidnightUTC).toISOString();
+        const endDate = new Date(jakartaTomorrowMidnightUTC).toISOString();
+        apiUrl = `/api/attendance/history?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
       }
+      // else: filter === 'all' or 'custom' without month filter -> fetch all (no date params)
       
       const response = await fetch(apiUrl);
       const data = await response.json();
       
       if (data.success) {
-        let filteredData = data.data;
-        
-        // Additional client-side filtering for quick filters
-        if (!useMonthFilter) {
-          const now = new Date();
-          
-          if (filter === 'today') {
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            filteredData = filteredData.filter((record: AttendanceRecord) => {
-              const recordDate = new Date(record.check_in_time);
-              return recordDate >= today;
-            });
-          } else if (filter === 'week') {
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            filteredData = filteredData.filter((record: AttendanceRecord) => {
-              return new Date(record.check_in_time) >= weekAgo;
-            });
-          }
-        }
-        
-        setAttendance(filteredData);
+        // Data sudah di-filter di server, langsung set tanpa client-side date filtering
+        setAttendance(data.data || []);
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function: Get Jakarta date string (YYYY-MM-DD)
+  const getJakartaDateStr = (date: Date): string => {
+    const jakartaDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const year = jakartaDate.getFullYear();
+    const month = String(jakartaDate.getMonth() + 1).padStart(2, '0');
+    const day = String(jakartaDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper function: Get Jakarta day of week (0-6, Sunday = 0)
+  const getJakartaDow = (date: Date): number => {
+    const jakartaDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    return jakartaDate.getDay();
+  };
+
+  // Helper function: Format date and time
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return {
+      date: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+      time: date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    };
+  };
+
+  // Helper function: Format schedule time dari HH:MM:SS menjadi HH:MM
+  const formatScheduleTime = (time: string | null | undefined): string => {
+    if (!time) return '';
+    return time.slice(0, 5); // Ambil 5 karakter pertama (HH:MM)
+  };
+
+  // Helper function: Get schedule berdasarkan day of week (0-6)
+  const getScheduleForDay = (dayOfWeek: number): any => {
+    return schedules.find(s => s.day_of_week === dayOfWeek && s.is_active) || null;
+  };
+
+  // Helper function: Parse time string ke minutes
+  const timeToMinutes = (timeStr: string): number => {
+    const [h, m] = timeStr.split(':').slice(0, 2).map(Number);
+    return h * 60 + m;
+  };
+
+  // Helper function: Klasifikasi status detail berdasarkan notes (prioritas) atau status/schedule (fallback)
+  const getAttendanceStatusDetail = (record: AttendanceRecord): {
+    statusDetail: 'on_time' | 'within_tolerance' | 'late';
+    statusLabel: string;
+    onTimeRange: string;
+    toleranceRange: string;
+    lateMinutes: number;
+  } => {
+    if (!record.check_in_time) {
+      return {
+        statusDetail: 'on_time',
+        statusLabel: 'Tepat Waktu',
+        onTimeRange: '-',
+        toleranceRange: '-',
+        lateMinutes: 0
+      };
+    }
+
+    // PRIORITAS 1: Cek status field DULU - jika status = 'late', langsung return late
+    // Ini penting untuk memastikan semua record terlambat terdeteksi, termasuk yang notes-nya mungkin tidak lengkap
+    if (record.status === 'late') {
+      const checkInDate = new Date(record.check_in_time);
+      const jakartaDate = new Date(checkInDate.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+      const dayOfWeek = jakartaDate.getDay();
+      const schedule = getScheduleForDay(dayOfWeek);
+      
+      // Parse late minutes dari notes jika ada
+      let lateMinutes = 0;
+      if (record.notes) {
+        const lateMatch = record.notes.match(/(\d+)\s*menit/);
+        if (lateMatch) {
+          lateMinutes = parseInt(lateMatch[1], 10);
+        }
+      }
+      
+      let onTimeRange = '-';
+      let toleranceRange = '-';
+      if (schedule) {
+        const startTime = formatScheduleTime(schedule.start_time);
+        const onTimeEnd = formatScheduleTime(schedule.on_time_end_time || schedule.start_time);
+        const toleranceStart = formatScheduleTime(schedule.tolerance_start_time || schedule.on_time_end_time || schedule.start_time);
+        const toleranceEnd = formatScheduleTime(schedule.tolerance_end_time || schedule.on_time_end_time || schedule.start_time);
+        onTimeRange = `${startTime}-${onTimeEnd}`;
+        toleranceRange = `${toleranceStart}-${toleranceEnd}`;
+      }
+
+      return {
+        statusDetail: 'late',
+        statusLabel: 'Terlambat',
+        onTimeRange: '-',
+        toleranceRange: '-',
+        lateMinutes: lateMinutes || 0
+      };
+    }
+
+    // PRIORITAS 2: Gunakan notes field jika ada (lebih akurat, dari data saat check-in)
+    if (record.notes && record.notes.trim() !== '') {
+      const notesLower = record.notes.toLowerCase().trim();
+      
+      // Parse late minutes dari notes jika ada
+      let lateMinutes = 0;
+      const lateMatch = record.notes.match(/(\d+)\s*menit/);
+      if (lateMatch) {
+        lateMinutes = parseInt(lateMatch[1], 10);
+      }
+
+      // Klasifikasi dari notes - PRIORITAS: cek terlambat DULU sebelum yang lain
+      if (notesLower.includes('terlambat') || notesLower.includes('late') || notesLower.includes('melewati batas') || notesLower.includes('melewati')) {
+        // Get schedule untuk format range (untuk konsistensi)
+        const checkInDate = new Date(record.check_in_time);
+        const jakartaDate = new Date(checkInDate.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const dayOfWeek = jakartaDate.getDay();
+        const schedule = getScheduleForDay(dayOfWeek);
+        
+        let onTimeRange = '-';
+        let toleranceRange = '-';
+        if (schedule) {
+          const startTime = formatScheduleTime(schedule.start_time);
+          const onTimeEnd = formatScheduleTime(schedule.on_time_end_time || schedule.start_time);
+          const toleranceStart = formatScheduleTime(schedule.tolerance_start_time || schedule.on_time_end_time || schedule.start_time);
+          const toleranceEnd = formatScheduleTime(schedule.tolerance_end_time || schedule.on_time_end_time || schedule.start_time);
+          onTimeRange = `${startTime}-${onTimeEnd}`;
+          toleranceRange = `${toleranceStart}-${toleranceEnd}`;
+        }
+
+        return {
+          statusDetail: 'late',
+          statusLabel: 'Terlambat',
+          onTimeRange: '-',
+          toleranceRange: '-',
+          lateMinutes: lateMinutes || 0
+        };
+      } else if (notesLower.includes('tepat waktu') || notesLower.includes('tepatwaktu') || notesLower.includes('tepat-waktu')) {
+        // Get schedule untuk format range (jika schedule tersedia)
+        const checkInDate = new Date(record.check_in_time);
+        const jakartaDate = new Date(checkInDate.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const dayOfWeek = jakartaDate.getDay();
+        const schedule = getScheduleForDay(dayOfWeek);
+        
+        let onTimeRange = '-';
+        if (schedule) {
+          const startTime = formatScheduleTime(schedule.start_time);
+          const onTimeEnd = formatScheduleTime(schedule.on_time_end_time || schedule.start_time);
+          onTimeRange = `${startTime}-${onTimeEnd}`;
+        }
+
+        return {
+          statusDetail: 'on_time',
+          statusLabel: 'Tepat Waktu',
+          onTimeRange,
+          toleranceRange: '-',
+          lateMinutes: 0
+        };
+      } else if (notesLower.includes('dalam toleransi') || notesLower.includes('toleransi') || notesLower.includes('hadir dalam')) {
+        // Get schedule untuk format range
+        const checkInDate = new Date(record.check_in_time);
+        const jakartaDate = new Date(checkInDate.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const dayOfWeek = jakartaDate.getDay();
+        const schedule = getScheduleForDay(dayOfWeek);
+        
+        let toleranceRange = '-';
+        if (schedule) {
+          const toleranceStart = formatScheduleTime(schedule.tolerance_start_time || schedule.on_time_end_time || schedule.start_time);
+          const toleranceEnd = formatScheduleTime(schedule.tolerance_end_time || schedule.on_time_end_time || schedule.start_time);
+          toleranceRange = `${toleranceStart}-${toleranceEnd}`;
+        }
+
+        return {
+          statusDetail: 'within_tolerance',
+          statusLabel: 'Dalam Toleransi',
+          onTimeRange: '-',
+          toleranceRange,
+          lateMinutes: 0
+        };
+      }
+    }
+
+    // FALLBACK 3: Jika notes tidak ada dan status bukan 'late', hitung dari schedule (untuk data lama)
+    // Get day of week dari check-in time (dalam timezone Jakarta)
+    const checkInDate = new Date(record.check_in_time);
+    const jakartaDate = new Date(checkInDate.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const dayOfWeek = jakartaDate.getDay();
+
+    // Get schedule untuk hari tersebut
+    const schedule = getScheduleForDay(dayOfWeek);
+    
+    if (!schedule) {
+      // Jika tidak ada schedule, default ke 'on_time' (kecuali status = 'late' sudah di-handle di atas)
+      return {
+        statusDetail: 'on_time',
+        statusLabel: 'Tepat Waktu',
+        onTimeRange: '-',
+        toleranceRange: '-',
+        lateMinutes: 0
+      };
+    }
+
+    // Parse waktu check-in dalam Jakarta timezone
+    const jakartaTimeStr = jakartaDate.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Jakarta'
+    });
+    const [checkInHour, checkInMin] = jakartaTimeStr.split(':').map(Number);
+    const checkInMinutes = checkInHour * 60 + checkInMin;
+
+    // Parse waktu jadwal
+    const startTime = formatScheduleTime(schedule.start_time);
+    const onTimeEnd = formatScheduleTime(schedule.on_time_end_time || schedule.start_time);
+    const toleranceStart = formatScheduleTime(schedule.tolerance_start_time || schedule.on_time_end_time || schedule.start_time);
+    const toleranceEnd = formatScheduleTime(schedule.tolerance_end_time || schedule.on_time_end_time || schedule.start_time);
+
+    const startMinutes = timeToMinutes(startTime);
+    const onTimeEndMinutes = timeToMinutes(onTimeEnd);
+    const toleranceStartMinutes = timeToMinutes(toleranceStart);
+    const toleranceEndMinutes = timeToMinutes(toleranceEnd);
+
+    // Format ranges
+    const onTimeRange = `${startTime}-${onTimeEnd}`;
+    const toleranceRange = `${toleranceStart}-${toleranceEnd}`;
+
+    // Klasifikasi status dari schedule
+    if (checkInMinutes >= startMinutes && checkInMinutes <= onTimeEndMinutes) {
+      return {
+        statusDetail: 'on_time',
+        statusLabel: 'Tepat Waktu',
+        onTimeRange,
+        toleranceRange: '-',
+        lateMinutes: 0
+      };
+    } else if (checkInMinutes > onTimeEndMinutes && checkInMinutes <= toleranceEndMinutes) {
+      return {
+        statusDetail: 'within_tolerance',
+        statusLabel: 'Dalam Toleransi',
+        onTimeRange: '-',
+        toleranceRange,
+        lateMinutes: 0
+      };
+    } else {
+      const lateMinutes = checkInMinutes - startMinutes;
+      return {
+        statusDetail: 'late',
+        statusLabel: 'Terlambat',
+        onTimeRange: '-',
+        toleranceRange: '-',
+        lateMinutes
+      };
+    }
+  };
+
+  // Helper function: Get status info (untuk backward compatibility - deprecated, gunakan getStatusDetailInfo)
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case 'present':
+        return { label: 'Hadir', color: 'green', icon: '✓' };
+      case 'late':
+        return { label: 'Terlambat', color: 'yellow', icon: '⏰' };
+      default:
+        return { label: 'Absen', color: 'red', icon: '✕' };
+    }
+  };
+
+  // Helper function: Get status detail info untuk tampilan badge/list (menggunakan status detail, bukan status umum)
+  const getStatusDetailInfo = (record: AttendanceRecord) => {
+    const statusDetail = getAttendanceStatusDetail(record);
+    
+    switch (statusDetail.statusDetail) {
+      case 'on_time':
+        return { 
+          label: 'Tepat Waktu', 
+          color: 'emerald', 
+          icon: '✓',
+          bgColor: 'bg-emerald-50',
+          textColor: 'text-emerald-700',
+          borderColor: 'border-emerald-200'
+        };
+      case 'within_tolerance':
+        return { 
+          label: 'Dalam Toleransi', 
+          color: 'orange', 
+          icon: '⏱️',
+          bgColor: 'bg-orange-50',
+          textColor: 'text-orange-700',
+          borderColor: 'border-orange-200'
+        };
+      case 'late':
+        return { 
+          label: 'Terlambat', 
+          color: 'yellow', 
+          icon: '⏰',
+          bgColor: 'bg-yellow-50',
+          textColor: 'text-yellow-700',
+          borderColor: 'border-yellow-200'
+        };
+      default:
+        return { 
+          label: 'Tepat Waktu', 
+          color: 'emerald', 
+          icon: '✓',
+          bgColor: 'bg-emerald-50',
+          textColor: 'text-emerald-700',
+          borderColor: 'border-emerald-200'
+        };
     }
   };
 
@@ -118,10 +505,13 @@ export default function AttendancePage() {
       return;
     }
 
-    // Prepare data for Excel (use filtered data)
+    // Prepare data for Excel (use filtered data dengan 11 kolom)
     const excelData = filteredAttendance.map((record, index) => {
       const checkIn = formatDateTime(record.check_in_time);
       const checkOut = record.check_out_time ? formatDateTime(record.check_out_time) : { date: '-', time: '-' };
+      
+      // Get status detail dengan schedule data
+      const statusDetail = getAttendanceStatusDetail(record);
       
       // Calculate duration
       let duration = '-';
@@ -134,31 +524,43 @@ export default function AttendancePage() {
         duration = `${hours}h ${minutes}m`;
       }
 
+      // Format late minutes jika terlambat
+      let lateDisplay = '-';
+      if (statusDetail.statusDetail === 'late' && statusDetail.lateMinutes > 0) {
+        lateDisplay = `${statusDetail.lateMinutes} menit`;
+      }
+
       return {
         'No': index + 1,
         'NIK': record.employees.employee_code,
         'Nama Lengkap': record.employees.full_name,
         'Tanggal': checkIn.date,
         'Jam Masuk': checkIn.time,
+        'Jam Tepat Waktu': statusDetail.onTimeRange,
+        'Jam Toleransi': statusDetail.toleranceRange,
+        'Terlambat': lateDisplay,
         'Jam Pulang': checkOut.time,
         'Durasi Kerja': duration,
-        'Status': record.status || '-',
+        'Status': statusDetail.statusLabel,
       };
     });
 
     // Create worksheet
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     
-    // Set column widths
+    // Set column widths (11 kolom)
     worksheet['!cols'] = [
       { wch: 5 },  // No
       { wch: 12 }, // NIK
-      { wch: 25 }, // Nama
+      { wch: 25 }, // Nama Lengkap
       { wch: 15 }, // Tanggal
       { wch: 12 }, // Jam Masuk
+      { wch: 18 }, // Jam Tepat Waktu
+      { wch: 18 }, // Jam Toleransi
+      { wch: 15 }, // Terlambat
       { wch: 12 }, // Jam Pulang
-      { wch: 15 }, // Durasi
-      { wch: 15 }, // Status
+      { wch: 15 }, // Durasi Kerja
+      { wch: 18 }, // Status
     ];
 
     // Create workbook
@@ -190,25 +592,161 @@ export default function AttendancePage() {
 
     // Download file
     XLSX.writeFile(workbook, `${filename}.xlsx`);
+    
+    // Close menu after download
+    setShowDownloadMenu(false);
   };
 
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return {
-      date: date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-      time: date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-    };
-  };
-
-  const getStatusInfo = (status: string) => {
-    switch (status) {
-      case 'present':
-        return { label: 'Hadir', color: 'green', icon: '✓' };
-      case 'late':
-        return { label: 'Terlambat', color: 'yellow', icon: '⏰' };
-      default:
-        return { label: 'Absen', color: 'red', icon: '✕' };
+  // PDF export function
+  const handleExportPDF = () => {
+    if (filteredAttendance.length === 0) {
+      alert('Tidak ada data untuk di-export');
+      return;
     }
+
+    // Create new PDF document
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+    
+    // Generate filename (same logic as Excel)
+    let filename = 'Laporan_Absensi';
+    if (useMonthFilter && selectedMonth) {
+      const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      const monthName = monthNames[selectedMonth.getMonth()];
+      const year = selectedMonth.getFullYear();
+      filename = `Laporan_Absensi_${monthName}_${year}`;
+      
+      if (searchQuery) {
+        filename += `_${searchQuery.replace(/\s+/g, '_')}`;
+      }
+    } else {
+      const now = new Date();
+      filename = `Laporan_Absensi_${now.toISOString().split('T')[0]}`;
+      
+      if (searchQuery) {
+        filename += `_${searchQuery.replace(/\s+/g, '_')}`;
+      }
+    }
+
+    // Prepare data for PDF table (11 kolom)
+    const tableData = filteredAttendance.map((record, index) => {
+      const checkIn = formatDateTime(record.check_in_time);
+      const checkOut = record.check_out_time ? formatDateTime(record.check_out_time) : { date: '-', time: '-' };
+      
+      // Get status detail dengan schedule data
+      const statusDetail = getAttendanceStatusDetail(record);
+      
+      // Calculate duration
+      let duration = '-';
+      if (record.check_out_time) {
+        const start = new Date(record.check_in_time);
+        const end = new Date(record.check_out_time);
+        const diff = end.getTime() - start.getTime();
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        duration = `${hours}h ${minutes}m`;
+      }
+
+      // Format late minutes jika terlambat
+      let lateDisplay = '-';
+      if (statusDetail.statusDetail === 'late' && statusDetail.lateMinutes > 0) {
+        lateDisplay = `${statusDetail.lateMinutes} menit`;
+      }
+      
+      return [
+        index + 1,
+        record.employees.employee_code,
+        record.employees.full_name,
+        checkIn.date,
+        checkIn.time,
+        statusDetail.onTimeRange,
+        statusDetail.toleranceRange,
+        lateDisplay,
+        checkOut.time,
+        duration,
+        statusDetail.statusLabel
+      ];
+    });
+
+    // Add title
+    doc.setFontSize(16);
+    doc.setTextColor(30, 58, 138); // Blue color
+    doc.text('Laporan Absensi', 14, 15);
+    
+    // Add subtitle with date range
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // Slate color
+    let subtitle = '';
+    if (useMonthFilter && selectedMonth) {
+      const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      const monthName = monthNames[selectedMonth.getMonth()];
+      const year = selectedMonth.getFullYear();
+      subtitle = `Periode: ${monthName} ${year}`;
+    } else if (filter === 'today') {
+      subtitle = 'Periode: Hari Ini';
+    } else if (filter === 'week') {
+      subtitle = 'Periode: 7 Hari Terakhir';
+    } else {
+      subtitle = 'Periode: Semua Data';
+    }
+    
+    if (searchQuery) {
+      subtitle += ` | Pencarian: ${searchQuery}`;
+    }
+    
+    doc.text(subtitle, 14, 22);
+    
+    // Add generated date
+    const generatedDate = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    doc.setFontSize(9);
+    doc.text(`Dibuat pada: ${generatedDate}`, 14, 27);
+
+    // Add table using autoTable (11 kolom)
+    autoTable(doc, {
+      head: [['No', 'NIK', 'Nama Lengkap', 'Tanggal', 'Jam Masuk', 'Jam Tepat Waktu', 'Jam Toleransi', 'Terlambat', 'Jam Pulang', 'Durasi Kerja', 'Status']],
+      body: tableData,
+      startY: 32,
+      styles: {
+        fontSize: 7,
+        cellPadding: 1.5,
+      },
+      headStyles: {
+        fillColor: [30, 58, 138], // Blue background
+        textColor: 255, // White text
+        fontStyle: 'bold',
+        fontSize: 7,
+      },
+      alternateRowStyles: {
+        fillColor: [249, 250, 251], // Light gray
+      },
+      columnStyles: {
+        0: { cellWidth: 8 },  // No
+        1: { cellWidth: 20 }, // NIK
+        2: { cellWidth: 35 }, // Nama Lengkap
+        3: { cellWidth: 20 }, // Tanggal
+        4: { cellWidth: 18 }, // Jam Masuk
+        5: { cellWidth: 22 }, // Jam Tepat Waktu
+        6: { cellWidth: 22 }, // Jam Toleransi
+        7: { cellWidth: 18 }, // Terlambat
+        8: { cellWidth: 18 }, // Jam Pulang
+        9: { cellWidth: 18 }, // Durasi Kerja
+        10: { cellWidth: 22 }, // Status
+      },
+      margin: { left: 10, right: 10 },
+    });
+
+    // Save PDF
+    doc.save(`${filename}.pdf`);
+    
+    // Close menu after download
+    setShowDownloadMenu(false);
   };
 
   const handleViewDetail = (record: AttendanceRecord) => {
@@ -228,13 +766,93 @@ export default function AttendancePage() {
     return fullName.includes(query) || employeeCode.includes(query);
   });
 
-  const stats = {
-    total: filteredAttendance.length,
-    present: filteredAttendance.filter(a => a.status === 'present').length,
-    late: filteredAttendance.filter(a => a.status === 'late').length,
-    absent: filteredAttendance.filter(a => a.status === 'absent').length,
-    checkOut: filteredAttendance.filter(a => a.check_out_time).length,
-  };
+  // Calculate stats dengan klasifikasi status detail
+  // Gunakan useMemo untuk memastikan calculation hanya dilakukan setelah data ready
+  const stats = useMemo(() => {
+    const onTimeCount = filteredAttendance.filter(a => {
+      const statusDetail = getAttendanceStatusDetail(a);
+      return statusDetail.statusDetail === 'on_time';
+    }).length;
+    
+    const withinToleranceCount = filteredAttendance.filter(a => {
+      const statusDetail = getAttendanceStatusDetail(a);
+      return statusDetail.statusDetail === 'within_tolerance';
+    }).length;
+    
+    const lateCount = filteredAttendance.filter(a => {
+      const statusDetail = getAttendanceStatusDetail(a);
+      return statusDetail.statusDetail === 'late';
+    }).length;
+
+    // Debug logging (hanya di development)
+    if (process.env.NODE_ENV === 'development' && filteredAttendance.length > 0) {
+      // Cek semua record dengan status = 'late' untuk memastikan terdeteksi
+      const recordsWithLateStatus = filteredAttendance.filter(r => r.status === 'late');
+      const recordsWithLateNotes = filteredAttendance.filter(r => {
+        const notes = r.notes?.toLowerCase() || '';
+        return notes.includes('terlambat') || notes.includes('late') || notes.includes('melewati');
+      });
+      
+      const sampleRecords = filteredAttendance.slice(0, 5).map(r => ({
+        id: r.id,
+        employee: r.employees.full_name,
+        notes: r.notes || '(null)',
+        status: r.status,
+        checkInTime: r.check_in_time,
+        statusDetail: getAttendanceStatusDetail(r),
+        classification: {
+          hasLateStatus: r.status === 'late',
+          hasLateNotes: (r.notes?.toLowerCase() || '').includes('terlambat') || (r.notes?.toLowerCase() || '').includes('late') || (r.notes?.toLowerCase() || '').includes('melewati')
+        }
+      }));
+      
+      console.log('📊 Stats Calculation:', {
+        total: filteredAttendance.length,
+        onTime: onTimeCount,
+        withinTolerance: withinToleranceCount,
+        late: lateCount,
+        schedulesLoaded: schedules.length,
+        filter: filter,
+        useMonthFilter: useMonthFilter,
+        recordsWithLateStatus: recordsWithLateStatus.length,
+        recordsWithLateNotes: recordsWithLateNotes.length,
+        sampleRecords: sampleRecords
+      });
+      
+      // Log records yang terlambat untuk debugging
+      const lateRecords = filteredAttendance.filter(a => {
+        const statusDetail = getAttendanceStatusDetail(a);
+        return statusDetail.statusDetail === 'late';
+      });
+      
+      if (lateRecords.length > 0) {
+        console.log('🔍 Late Records Details:', lateRecords.map(r => ({
+          id: r.id,
+          employee: r.employees.full_name,
+          notes: r.notes || '(null)',
+          status: r.status,
+          checkInTime: r.check_in_time,
+          statusDetail: getAttendanceStatusDetail(r)
+        })));
+      } else {
+        console.warn('⚠️ TIDAK ADA RECORD TERLAMBAT YANG TERDETEKSI!', {
+          recordsWithLateStatus: recordsWithLateStatus.length,
+          recordsWithLateNotes: recordsWithLateNotes.length,
+          allStatuses: [...new Set(filteredAttendance.map(r => r.status))],
+          sampleNotes: filteredAttendance.slice(0, 10).map(r => r.notes || '(null)')
+        });
+      }
+    }
+
+    return {
+      total: filteredAttendance.length,
+      present: filteredAttendance.filter(a => a.status === 'present').length,
+      onTime: onTimeCount,
+      withinTolerance: withinToleranceCount,
+      late: lateCount,
+      checkOut: filteredAttendance.filter(a => a.check_out_time).length,
+    };
+  }, [filteredAttendance, schedules]);
 
   if (loading) {
     return (
@@ -292,7 +910,7 @@ export default function AttendancePage() {
         <div className="max-w-7xl mx-auto">
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
           <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200 hover:shadow-md transition-all">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -321,6 +939,34 @@ export default function AttendancePage() {
             </div>
           </div>
 
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-emerald-200 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">Tepat Waktu</p>
+                <p className="text-xl sm:text-2xl font-bold text-emerald-600">{stats.onTime}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-orange-200 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">Toleransi</p>
+                <p className="text-xl sm:text-2xl font-bold text-orange-600">{stats.withinTolerance}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-yellow-200 hover:shadow-md transition-all">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
@@ -335,21 +981,7 @@ export default function AttendancePage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-red-200 hover:shadow-md transition-all">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="text-xs sm:text-sm text-slate-500 font-medium">Absen</p>
-                <p className="text-xl sm:text-2xl font-bold text-red-600">{stats.absent}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-indigo-200 hover:shadow-md transition-all col-span-2 lg:col-span-1">
+          <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm border border-indigo-200 hover:shadow-md transition-all">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
                 <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -367,11 +999,11 @@ export default function AttendancePage() {
         {/* Filter Tabs & Month Picker */}
         <div className="mb-6 space-y-4">
           {/* Quick Filters */}
-          <div className="bg-white rounded-xl sm:rounded-2xl p-2 shadow-sm border border-slate-200">
-            <div className="grid grid-cols-4 gap-2">
+          <div className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
               <button
                 onClick={() => { setFilter('today'); setUseMonthFilter(false); setSearchQuery(''); }}
-                className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                className={`px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                   filter === 'today' && !useMonthFilter
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
@@ -381,7 +1013,7 @@ export default function AttendancePage() {
               </button>
               <button
                 onClick={() => { setFilter('week'); setUseMonthFilter(false); setSearchQuery(''); }}
-                className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                className={`px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                   filter === 'week' && !useMonthFilter
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
@@ -391,25 +1023,69 @@ export default function AttendancePage() {
               </button>
               <button
                 onClick={() => { setFilter('custom'); setUseMonthFilter(true); }}
-                className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                className={`px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
                   useMonthFilter
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                📅 Per Bulan
+                <span className="hidden sm:inline">📅 </span>Per Bulan
               </button>
-              <button
-                onClick={handleExportExcel}
-                disabled={filteredAttendance.length === 0}
-                className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md hover:shadow-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span className="hidden sm:inline">Download</span>
-                <span className="sm:hidden">Excel</span>
-              </button>
+              <div className="relative" ref={downloadMenuRef}>
+                <button
+                  onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                  disabled={filteredAttendance.length === 0}
+                  className="px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md hover:shadow-lg hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 sm:gap-2 w-full"
+                >
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="hidden sm:inline">Download</span>
+                  <span className="sm:hidden">Download</span>
+                  <svg className={`w-3 h-3 transition-transform ${showDownloadMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {/* Dropdown Menu */}
+                {showDownloadMenu && (
+                  <div className="absolute right-0 mt-2 w-48 sm:w-56 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden z-50 animate-fadeIn">
+                    <button
+                      onClick={handleExportExcel}
+                      disabled={filteredAttendance.length === 0}
+                      className="w-full px-4 py-3 text-left hover:bg-green-50 transition-colors flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">Download Excel</p>
+                        <p className="text-xs text-slate-500 truncate">File .xlsx</p>
+                      </div>
+                    </button>
+                    
+                    <div className="h-px bg-slate-200"></div>
+                    
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={filteredAttendance.length === 0}
+                      className="w-full px-4 py-3 text-left hover:bg-red-50 transition-colors flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">Download PDF</p>
+                        <p className="text-xs text-slate-500 truncate">File .pdf</p>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -517,7 +1193,8 @@ export default function AttendancePage() {
         ) : (
           <div className="space-y-3 sm:space-y-4">
             {filteredAttendance.map((record) => {
-              const statusInfo = getStatusInfo(record.status);
+              // Gunakan getStatusDetailInfo untuk menampilkan status detail (Tepat Waktu, Dalam Toleransi, Terlambat)
+              const statusDetailInfo = getStatusDetailInfo(record);
               const checkIn = formatDateTime(record.check_in_time);
               const checkOut = record.check_out_time ? formatDateTime(record.check_out_time) : null;
               
@@ -542,16 +1219,10 @@ export default function AttendancePage() {
                           <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">{record.employees.full_name}</h3>
                           <p className="text-xs text-slate-500">{record.employees.employee_code}</p>
                   </div>
-                        {/* Status Badge - Always beside name */}
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-semibold border flex-shrink-0 ${
-                          statusInfo.color === 'green' 
-                            ? 'bg-green-50 text-green-700 border-green-200'
-                            : statusInfo.color === 'yellow'
-                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                            : 'bg-red-50 text-red-700 border-red-200'
-                        }`}>
-                          <span>{statusInfo.icon}</span>
-                          <span className="hidden sm:inline">{statusInfo.label}</span>
+                        {/* Status Badge - Menampilkan status detail (Tepat Waktu, Dalam Toleransi, Terlambat) */}
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-semibold border flex-shrink-0 ${statusDetailInfo.bgColor} ${statusDetailInfo.textColor} ${statusDetailInfo.borderColor}`}>
+                          <span>{statusDetailInfo.icon}</span>
+                          <span className="hidden sm:inline">{statusDetailInfo.label}</span>
                   </span>
                 </div>
                 
@@ -652,17 +1323,12 @@ export default function AttendancePage() {
                 <div className="bg-white rounded-lg p-3 border border-slate-200">
                   <p className="text-xs text-slate-500 font-medium mb-1.5">Status Kehadiran</p>
                   {(() => {
-                    const info = getStatusInfo(selectedRecord.status);
+                    // Gunakan getStatusDetailInfo untuk menampilkan status detail di modal
+                    const statusDetailInfo = getStatusDetailInfo(selectedRecord);
                     return (
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${
-                        info.color === 'green' 
-                          ? 'bg-green-100 text-green-700'
-                          : info.color === 'yellow'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        <span>{info.icon}</span>
-                        <span>{info.label}</span>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${statusDetailInfo.bgColor} ${statusDetailInfo.textColor}`}>
+                        <span>{statusDetailInfo.icon}</span>
+                        <span>{statusDetailInfo.label}</span>
                       </span>
                     );
                   })()}

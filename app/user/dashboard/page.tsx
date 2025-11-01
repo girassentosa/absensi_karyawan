@@ -135,6 +135,13 @@ export default function UserDashboard() {
     return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Helper function: Format schedule time dari HH:MM:SS menjadi HH:MM
+  const formatScheduleTime = (time: string | null | undefined): string => {
+    if (!time) return '';
+    // Potong hanya ambil HH:MM (5 karakter pertama dari HH:MM:SS)
+    return time.slice(0, 5);
+  };
+
   const currentDate = new Date().toLocaleDateString('id-ID', {
     weekday: 'long',
     year: 'numeric',
@@ -179,11 +186,39 @@ export default function UserDashboard() {
                 <p className="text-red-800 text-sm font-semibold">Hari ini adalah hari libur. Absensi dinonaktifkan.</p>
               </div>
             ) : todaySchedule ? (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 flex items-start gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-3 sm:p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-md">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-blue-700 font-bold mb-1.5">📅 Jadwal Hari Ini</p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs sm:text-sm text-blue-900">
+                      <span className="font-bold flex items-center gap-1.5 bg-green-50 px-2 py-1 rounded-md border border-green-200">
+                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-green-700">
+                          {formatScheduleTime(todaySchedule?.start_time)} - {formatScheduleTime(todaySchedule?.on_time_end_time || todaySchedule?.start_time)}
+                        </span>
+                      </span>
+                      <span className="font-bold flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded-md border border-orange-200">
+                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-orange-700">
+                          {formatScheduleTime(todaySchedule?.tolerance_start_time || todaySchedule?.on_time_end_time || todaySchedule?.start_time)} - {formatScheduleTime(todaySchedule?.tolerance_end_time || todaySchedule?.on_time_end_time || todaySchedule?.start_time)}
+                        </span>
+                      </span>
+                      <span className="font-bold flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded-md border border-blue-200">
+                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        Pulang: <span className="text-blue-700">{formatScheduleTime(todaySchedule?.end_time)}</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-blue-900 text-sm font-semibold">Hari ini: Jam kerja {todaySchedule?.start_time}–{todaySchedule?.end_time}, toleransi {todaySchedule?.late_tolerance_minutes} menit</p>
               </div>
             ) : null}
 

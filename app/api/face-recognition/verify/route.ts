@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
+// Disable caching untuk memastikan threshold selalu ter-update
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * Calculate Euclidean distance between two face descriptors
  * Lower distance = more similar faces
@@ -124,13 +128,18 @@ export async function POST(request: NextRequest) {
     console.log('📊 Similarity:', similarity + '%');
 
     // Get face recognition threshold from system settings
-    const { data: settings } = await supabaseServer
+    const { data: settings, error: settingsError } = await supabaseServer
       .from('system_settings')
-      .select('value')
-      .eq('key', 'face_recognition_threshold')
+      .select('setting_value')
+      .eq('setting_key', 'face_recognition_threshold')
       .single();
 
-    const match_threshold = settings?.value ? parseInt(settings.value) : 80;
+    if (settingsError) {
+      console.warn('⚠️ Error fetching threshold from database:', settingsError);
+      console.log('⚠️ Using default threshold: 80%');
+    }
+
+    const match_threshold = settings?.setting_value ? parseInt(settings.setting_value) : 80;
     console.log('🎯 Threshold:', match_threshold + '%');
 
     // Determine if face matches

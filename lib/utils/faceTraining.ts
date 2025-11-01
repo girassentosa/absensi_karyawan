@@ -383,10 +383,17 @@ export async function performInstantVerification(
     return;
   }
 
-  // Fetch threshold from API
+  // Fetch threshold from API - real-time, no cache
   let threshold = 80; // default
   try {
-    const response = await fetch('/api/system-settings');
+    const response = await fetch('/api/system-settings', {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
     const data = await response.json();
     if (data.success) {
       threshold = parseInt(data.data.face_recognition_threshold?.value || '80');
@@ -621,7 +628,14 @@ export async function performRealTimeVerification(
  */
 export async function getSystemSettings() {
   try {
-    const response = await fetch('/api/system-settings');
+    const response = await fetch('/api/system-settings', {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
     const data = await response.json();
     
     if (data.success) {
@@ -635,7 +649,7 @@ export async function getSystemSettings() {
   }
   
   // Default settings
-      return { 
+  return { 
     faceThreshold: 80,
     gpsRadius: 3000
   };

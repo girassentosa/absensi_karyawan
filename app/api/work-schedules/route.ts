@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
+// Force dynamic rendering (no cache) - agar data selalu fresh
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // GET /api/work-schedules - Get all work schedules
 export async function GET(request: NextRequest) {
   try {

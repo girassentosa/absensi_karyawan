@@ -36,11 +36,18 @@ export default function FaceVerificationCamera({
   const [currentConfidence, setCurrentConfidence] = useState(0);
   const [threshold, setThreshold] = useState<number>(80); // Default threshold
 
-  // Fetch system settings (threshold) on mount
+  // Fetch system settings (threshold) on mount - real-time, no cache
   useEffect(() => {
     const fetchSystemSettings = async () => {
       try {
-        const response = await fetch('/api/system-settings');
+        const response = await fetch('/api/system-settings', {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
         const data = await response.json();
         
         if (data.success) {

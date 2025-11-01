@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
+// Disable caching untuk memastikan pengaturan selalu fresh
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // GET /api/system-settings - Get all system settings
 export async function GET(request: NextRequest) {
   try {

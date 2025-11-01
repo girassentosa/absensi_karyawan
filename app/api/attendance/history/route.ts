@@ -20,6 +20,10 @@ export async function GET(request: NextRequest) {
     const startYear = searchParams.get('startYear');
     const endMonth = searchParams.get('endMonth');
     const endYear = searchParams.get('endYear');
+    
+    // Date range filtering parameters (for "Hari Ini" and "7 Hari" filters)
+    const startDate = searchParams.get('startDate'); // ISO string
+    const endDate = searchParams.get('endDate'); // ISO string
 
     let query = supabaseServer
       .from('attendance')
@@ -69,6 +73,12 @@ export async function GET(request: NextRequest) {
       query = query
         .gte('check_in_time', new Date(startDateUTC).toISOString())
         .lt('check_in_time', new Date(endDateUTC).toISOString());
+    }
+    // Filter by date range if provided (for "Hari Ini" and "7 Hari" filters)
+    else if (startDate && endDate) {
+      query = query
+        .gte('check_in_time', startDate)
+        .lt('check_in_time', endDate);
     }
 
     // Apply pagination

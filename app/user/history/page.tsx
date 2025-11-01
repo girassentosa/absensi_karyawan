@@ -11,7 +11,7 @@ export default function UserHistoryPage() {
   const [employee, setEmployee] = useState<any>(null);
   const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | '7days' | '30days'>('30days');
+  const [filter, setFilter] = useState<'all' | '7days' | '30days'>('7days');
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -84,6 +84,28 @@ export default function UserHistoryPage() {
     return filtered;
   };
 
+  // Helper function: Klasifikasi status detail berdasarkan data yang ada
+  // Note: statusDetail tidak ada di database, jadi kita klasifikasi berdasarkan status dan notes
+  const getStatusDetail = (record: any): 'on_time' | 'within_tolerance' | 'late_beyond' => {
+    // Jika status === 'late', pasti late_beyond
+    if (record.status === 'late') {
+      return 'late_beyond';
+    }
+    
+    // Jika status === 'present', cek notes untuk tahu apakah within_tolerance
+    if (record.status === 'present') {
+      // Jika ada notes tentang toleransi, berarti within_tolerance
+      if (record.notes && (record.notes.includes('toleransi') || record.notes.includes('Toleransi'))) {
+        return 'within_tolerance';
+      }
+      // Default untuk present adalah on_time
+      return 'on_time';
+    }
+    
+    // Default
+    return 'on_time';
+  };
+
   const filteredRecords = filterAttendance();
 
   return (
@@ -112,8 +134,9 @@ export default function UserHistoryPage() {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Stats Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
+          {/* Stats Summary - 5 Cards (Konsisten dengan Admin Dashboard) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6">
+            {/* Card 1: Total Absensi */}
             <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
@@ -129,6 +152,7 @@ export default function UserHistoryPage() {
               </div>
             </div>
 
+            {/* Card 2: Tepat Waktu (BARU) */}
             <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
@@ -137,28 +161,47 @@ export default function UserHistoryPage() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <p className="text-xs text-slate-500 font-medium">Hadir</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {filteredRecords.filter(r => r.status === 'present').length}
+                  <p className="text-xs text-slate-500 font-medium">Tepat Waktu</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {filteredRecords.filter(r => getStatusDetail(r) === 'on_time').length}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">Tepat waktu</p>
+                  <p className="text-xs text-slate-500 mt-1">Masuk tepat waktu</p>
                 </div>
               </div>
             </div>
 
+            {/* Card 3: Dalam Toleransi (BARU) */}
             <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                  <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-slate-500 font-medium">Dalam Toleransi</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {filteredRecords.filter(r => getStatusDetail(r) === 'within_tolerance').length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Masuk dalam batas</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Terlambat */}
+            <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div className="flex-1">
                   <p className="text-xs text-slate-500 font-medium">Terlambat</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {filteredRecords.filter(r => r.status === 'late').length}
+                  <p className="text-2xl font-bold text-red-600">
+                    {filteredRecords.filter(r => getStatusDetail(r) === 'late_beyond').length}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">Lewat jam masuk</p>
+                  <p className="text-xs text-slate-500 mt-1">Lewat batas toleransi</p>
                 </div>
               </div>
             </div>
