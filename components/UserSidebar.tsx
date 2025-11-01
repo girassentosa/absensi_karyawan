@@ -15,8 +15,8 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
   const [user, setUser] = useState<any>(null);
   const [employee, setEmployee] = useState<any>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
-  const [editFormData, setEditFormData] = useState({
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editData, setEditData] = useState({
     username: '',
     email: '',
     avatarUrl: '',
@@ -24,7 +24,6 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
     newPassword: '',
     confirmPassword: '',
   });
-  const [previewAvatar, setPreviewAvatar] = useState('');
 
   // Use external state if provided, otherwise use internal state
   const [internalSidebarOpen, setInternalSidebarOpen] = useState(false);
@@ -58,114 +57,76 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
     router.push('/');
   };
 
-  const handleOpenProfileModal = () => setShowProfileModal(true);
+  const handleOpenProfile = () => {
+    setShowProfileModal(true);
+  };
 
-  const handleOpenEditProfileModal = () => {
-    setShowProfileModal(false);
-    const avatarUrl = user?.avatar_url || '/images/profile.jpg';
-    setEditFormData({
+  const handleOpenEdit = () => {
+    setEditData({
       username: user?.username || '',
       email: user?.email || '',
-      avatarUrl: avatarUrl,
+      avatarUrl: user?.avatar_url || '/images/profile.jpg',
       currentPassword: '',
       newPassword: '',
       confirmPassword: '',
     });
-    setPreviewAvatar(avatarUrl);
-    setShowEditProfileModal(true);
+    setShowProfileModal(false);
+    setShowEditModal(true);
   };
 
-  const handleAvatarUrlChange = (url: string) => {
-    setEditFormData({ ...editFormData, avatarUrl: url });
-    setPreviewAvatar(url);
-  };
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!editFormData.username || editFormData.username.trim() === '') {
-      alert('Username tidak boleh kosong!');
-      return;
-    }
-
-    if (!editFormData.email || editFormData.email.trim() === '') {
-      alert('Email tidak boleh kosong!');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(editFormData.email)) {
-      alert('Format email tidak valid!');
-      return;
-    }
-
-    if (editFormData.newPassword && editFormData.newPassword !== editFormData.confirmPassword) {
-      alert('Password baru dan konfirmasi password tidak cocok!');
-      return;
-    }
-
-    if (editFormData.newPassword && editFormData.newPassword.length < 6) {
-      alert('Password baru minimal 6 karakter!');
-      return;
-    }
-
-    if (editFormData.newPassword && !editFormData.currentPassword) {
-      alert('Password saat ini harus diisi untuk mengganti password!');
-      return;
-    }
-
+  const handleUpdateProfile = async () => {
     try {
+      const { username, email, currentPassword, newPassword, confirmPassword, avatarUrl } = editData;
+
+      if (newPassword && newPassword !== confirmPassword) {
+        alert('Password baru dan konfirmasi tidak cocok!');
+        return;
+      }
+
+      if (newPassword && !currentPassword) {
+        alert('Masukkan password saat ini untuk mengubah password!');
+        return;
+      }
+
+      const updateData: any = { currentEmail: user.email };
+
+      if (username && username !== user.username) updateData.username = username;
+      if (email && email !== user.email) updateData.newEmail = email;
+      if (avatarUrl !== user.avatar_url) updateData.avatarUrl = avatarUrl;
+      if (newPassword) {
+        updateData.currentPassword = currentPassword;
+        updateData.newPassword = newPassword;
+      }
+
       const response = await fetch('/api/auth/update-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentEmail: user.email,
-          newEmail: editFormData.email,
-          username: editFormData.username,
-          currentPassword: editFormData.currentPassword || undefined,
-          newPassword: editFormData.newPassword || undefined,
-          avatarUrl: editFormData.avatarUrl,
-        }),
+        body: JSON.stringify(updateData),
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         const updatedUser = {
           ...user,
-          username: data.updatedUsername || editFormData.username,
-          email: data.updatedEmail || editFormData.email,
-          avatar_url: editFormData.avatarUrl
+          username: data.updatedUsername || username,
+          email: data.updatedEmail || email,
+          avatar_url: avatarUrl,
         };
-        setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
-
-        // Close modal first
-        setShowEditProfileModal(false);
+        setUser(updatedUser);
+        setShowEditModal(false);
         
-        setEditFormData({
-          ...editFormData,
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        });
-
-        // Then show notification after a short delay
         setTimeout(() => {
-          if (editFormData.newPassword) {
-            alert('✅ Profile berhasil diupdate!\n\nPassword Anda telah diubah. Tetap di halaman ini dan gunakan password baru untuk login berikutnya.');
-          } else {
-            alert('✅ Profile berhasil diupdate!');
-          }
-          // Refresh page to update UI with new data
+          alert(newPassword ? '✅ Profil dan password berhasil diperbarui!' : '✅ Profil berhasil diperbarui!');
           window.location.reload();
         }, 100);
       } else {
-        alert('❌ ' + (data.error || 'Gagal update profile'));
+        alert('❌ ' + (data.error || 'Gagal memperbarui profil'));
       }
     } catch (error) {
-      console.error('Error updating profile:', error);
-      alert('Gagal update profile');
+      console.error('Error:', error);
+      alert('Terjadi kesalahan saat memperbarui profil');
     }
   };
 
@@ -234,8 +195,8 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
           {/* Profile Section - Top */}
           <div className="p-4 border-b border-slate-200 bg-slate-50">
             <button
-              onClick={handleOpenProfileModal}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 transition-all group shadow-sm"
+              onClick={handleOpenProfile}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 shadow-sm transition-all group"
             >
               {user?.avatar_url ? (
                 <img
@@ -255,8 +216,8 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
                 <p className="font-bold text-slate-900 text-sm truncate">{user?.username || 'User'}</p>
                 <p className="text-xs text-slate-500 truncate">{employee?.employee_code || 'Karyawan'}</p>
               </div>
-              <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
           </div>
@@ -306,191 +267,159 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
         />
       )}
 
-      {/* Profile Modal (View) */}
+      {/* Profile View Modal */}
       {showProfileModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4" onClick={() => setShowProfileModal(false)}>
-          <div className="bg-white rounded-xl sm:rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-200 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-center mb-4 sm:mb-6">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowProfileModal(false)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
               {user?.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt="Profile"
-                  className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover shadow-2xl border-4 border-slate-200"
-                />
+                <img src={user.avatar_url} alt="Profile" className="w-24 h-24 rounded-full object-cover border-4 border-blue-500 mx-auto mb-4 shadow-lg" />
               ) : (
-                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-3xl sm:text-5xl shadow-2xl">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 border-4 border-white shadow-lg">
                   {getInitials(user?.username || user?.email || '')}
                 </div>
               )}
-            </div>
-            <div className="text-center mb-4 sm:mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-1">{user?.username || 'User'}</h2>
-              <p className="text-slate-500 text-xs sm:text-sm mb-1 truncate">{user?.email || ''}</p>
-              <span className="inline-block px-2 sm:px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold border border-blue-200">
-                Karyawan
-              </span>
-            </div>
-            <div className="space-y-2 sm:space-y-3">
-              <button
-                onClick={handleOpenEditProfileModal}
-                className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg sm:rounded-xl shadow-lg transition-all text-sm sm:text-base flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                Edit Profile
-              </button>
+              <h3 className="text-2xl font-bold text-slate-900 mb-1">{user?.username || 'User'}</h3>
+              <p className="text-slate-500 text-sm mb-2">{user?.email}</p>
+              <p className="text-xs text-slate-500 mb-6">{employee?.employee_code || 'Karyawan'}</p>
+              <div className="space-y-2">
+                <button onClick={handleOpenEdit} className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-md hover:shadow-lg">
+                  Edit Profile
+                </button>
+                <button onClick={() => setShowProfileModal(false)} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-6 rounded-xl transition-all">
+                  Tutup
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Edit Profile Modal */}
-      {showEditProfileModal && (
-        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4" onClick={() => setShowEditProfileModal(false)}>
-          <div className="bg-white rounded-xl sm:rounded-2xl max-w-sm sm:max-w-lg lg:max-w-3xl w-full shadow-2xl border border-slate-200 max-h-[95vh] overflow-y-auto custom-scrollbar animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+      {/* Edit Profile Modal - 2 Sections Design */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-hidden animate-fadeIn" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-600 p-4 sm:p-6 rounded-t-xl sm:rounded-t-2xl">
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 text-white">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-white flex items-center gap-2">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                   Edit Profile
                 </h3>
-                <button
-                  onClick={() => setShowEditProfileModal(false)}
-                  className="text-white/80 hover:text-white hover:bg-white/20 p-2 rounded-lg transition-all"
-                >
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button onClick={() => setShowEditModal(false)} className="text-white/80 hover:text-white hover:bg-white/20 p-2 rounded-lg transition-all">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-              {/* Avatar Section */}
-              <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl p-4 sm:p-6 border border-slate-200">
-                <h4 className="text-black font-bold mb-4 text-sm sm:text-base flex items-center gap-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Foto Profile
-                </h4>
-                
-                <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6">
-                  {/* Preview Avatar */}
-                  <div className="flex-shrink-0">
-                    {previewAvatar ? (
-                      <img 
-                        src={previewAvatar} 
-                        alt="Preview" 
-                        className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-white shadow-xl"
-                        onError={(e) => {
-                          e.currentTarget.src = '';
-                          e.currentTarget.alt = 'Invalid URL';
-                        }}
-                      />
+            {/* Content - 2 Sections */}
+            <div className="grid md:grid-cols-2 gap-6 p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+              {/* Left Section - Profile Info */}
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl p-5 border border-blue-200">
+                  <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Informasi Profile
+                  </h4>
+                  
+                  {/* Avatar Preview */}
+                  <div className="flex flex-col items-center mb-4">
+                    {editData.avatarUrl ? (
+                      <img src={editData.avatarUrl} alt="Preview" className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg" />
                     ) : (
-                      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl sm:text-3xl shadow-xl border-4 border-white">
+                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg">
                         {getInitials(user?.username || user?.email || '')}
                       </div>
                     )}
                   </div>
 
-                  {/* Input URL */}
-                  <div className="flex-1 w-full">
-                    <label className="block text-black mb-2 text-xs sm:text-sm font-semibold opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>
-                      URL Foto
-                    </label>
-                    <input 
-                      type="text" 
-                      value={editFormData.avatarUrl} 
-                      onChange={(e) => handleAvatarUrlChange(e.target.value)} 
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm" 
+                  {/* Avatar URL Input */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">URL Foto Profile</label>
+                    <input
+                      type="text"
+                      value={editData.avatarUrl}
+                      onChange={(e) => setEditData({ ...editData, avatarUrl: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-white border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
+                      placeholder="/images/profile.jpg"
                     />
-                    <p className="text-xs text-slate-500 mt-1.5">
-                      💡 Tinggal ubah nama file: /images/<strong>nama-foto.jpg</strong>
-                    </p>
+                    <p className="text-xs text-slate-500 mt-1.5">💡 Contoh: /images/nama-foto.jpg</p>
                   </div>
                 </div>
-              </div>
 
-              {/* Account Info */}
-              <div className="bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200">
-                <h4 className="text-black font-bold mb-4 text-sm sm:text-base flex items-center gap-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>
-                  <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  Informasi Akun
-                </h4>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-black mb-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>Username</label>
-                    <input 
-                      type="text" 
-                      value={editFormData.username} 
-                      onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })} 
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-white border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm" 
-                      placeholder="Username"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm font-semibold text-black mb-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>Email</label>
-                    <input 
-                      type="email" 
-                      value={editFormData.email} 
-                      onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })} 
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-white border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm" 
-                      placeholder="email@example.com"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Password Section */}
-              <div className="bg-amber-50 rounded-xl p-4 sm:p-6 border border-amber-200">
-                <h4 className="text-black font-bold mb-1 text-sm sm:text-base flex items-center gap-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>
-                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                  Ubah Password
-                </h4>
-                <p className="text-xs text-amber-700 mb-4">Kosongkan jika tidak ingin mengubah password</p>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-black mb-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>Password Saat Ini</label>
-                    <input 
-                      type="password" 
-                      value={editFormData.currentPassword} 
-                      onChange={(e) => setEditFormData({ ...editFormData, currentPassword: e.target.value })} 
-                      className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-white border-2 border-amber-200 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm" 
-                      placeholder="Masukkan password saat ini"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Account Info */}
+                <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                  <div className="space-y-4">
                     <div>
-                      <label className="block text-xs sm:text-sm font-medium text-black mb-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>Password Baru</label>
-                      <input 
-                        type="password" 
-                        value={editFormData.newPassword} 
-                        onChange={(e) => setEditFormData({ ...editFormData, newPassword: e.target.value })} 
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-white border-2 border-amber-200 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm" 
-                        placeholder="Password baru"
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Username</label>
+                      <input
+                        type="text"
+                        value={editData.username}
+                        onChange={(e) => setEditData({ ...editData, username: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
+                        placeholder="Username"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs sm:text-sm font-medium text-black mb-2 opacity-100" style={{ color: '#000000', WebkitTextFillColor: '#000000' }}>Konfirmasi Password</label>
-                      <input 
-                        type="password" 
-                        value={editFormData.confirmPassword} 
-                        onChange={(e) => setEditFormData({ ...editFormData, confirmPassword: e.target.value })} 
-                        className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-white border-2 border-amber-200 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm" 
-                        placeholder="Konfirmasi password"
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Email</label>
+                      <input
+                        type="email"
+                        value={editData.email}
+                        onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border-2 border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-sm"
+                        placeholder="email@example.com"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Section - Password */}
+              <div>
+                <div className="bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl p-5 border border-amber-300 h-full">
+                  <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Ubah Password
+                  </h4>
+                  <p className="text-xs text-amber-700 mb-4">Kosongkan jika tidak ingin mengubah password</p>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Password Saat Ini</label>
+                      <input
+                        type="password"
+                        value={editData.currentPassword}
+                        onChange={(e) => setEditData({ ...editData, currentPassword: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border-2 border-amber-200 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Password Baru</label>
+                      <input
+                        type="password"
+                        value={editData.newPassword}
+                        onChange={(e) => setEditData({ ...editData, newPassword: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border-2 border-amber-200 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Konfirmasi Password</label>
+                      <input
+                        type="password"
+                        value={editData.confirmPassword}
+                        onChange={(e) => setEditData({ ...editData, confirmPassword: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border-2 border-amber-200 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all text-sm"
+                        placeholder="••••••••"
                       />
                     </div>
                   </div>
@@ -498,25 +427,23 @@ export default function UserSidebar({ isSidebarOpen: externalSidebarOpen, setIsS
               </div>
             </div>
 
-            {/* Footer Actions */}
-            <div className="sticky bottom-0 bg-slate-50 p-4 sm:p-6 border-t border-slate-200 rounded-b-xl sm:rounded-b-2xl">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button 
-                  onClick={handleUpdateProfile} 
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg sm:rounded-xl transition-all shadow-lg hover:shadow-xl text-sm sm:text-base flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Simpan Perubahan
-                </button>
-                <button 
-                  onClick={() => setShowEditProfileModal(false)} 
-                  className="flex-1 sm:flex-none bg-white hover:bg-slate-100 border-2 border-slate-300 text-slate-700 font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg sm:rounded-xl transition-all text-sm sm:text-base"
-                >
-                  Batal
-                </button>
-              </div>
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex gap-3">
+              <button
+                onClick={handleUpdateProfile}
+                className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Simpan Perubahan
+              </button>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-6 py-3 bg-white hover:bg-slate-100 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl transition-all"
+              >
+                Batal
+              </button>
             </div>
           </div>
         </div>
@@ -538,4 +465,3 @@ export function SidebarToggleButton({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
-
